@@ -5,7 +5,9 @@ import EmailOTP from "../models/EmailOTP.js";
 
 import { generateOTP } from "../utils/generateOTP.js";
 import { sendOTPEmail } from "../services/emailService.js";
+import { generateToken } from "../utils/generateToken.js";
 
+//Register
 export const registerUser = async (req, res) => {
   try {
     const {
@@ -239,6 +241,103 @@ export const verifyEmail = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Server error during email verification",
+    });
+  }
+};
+
+
+//Login
+export const loginUser = async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    // 1. Validate input
+    if (!email || !password) {
+      return res.status(400).json({
+        success: false,
+        message: "Email and password are required",
+      });
+    }
+
+    const normalizedEmail = email.toLowerCase().trim();
+
+    // 2. Find user
+    const user = await User.findOne({
+      email: normalizedEmail,
+    });
+
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid email or password",
+      });
+    }
+
+    // 3. Check email verification
+    if (!user.isEmailVerified) {
+      return res.status(403).json({
+        success: false,
+        message: "Please verify your email before logging in",
+      });
+    }
+
+    // 4. Check account status
+    if (user.status === "blocked") {
+      return res.status(403).json({
+        success: false,
+        message: "Your account has been blocked",
+      });
+    }
+
+    // 5. Host approval check
+    if (user.role === "host" && user.status === "pending") {
+      return res.status(403).json({
+        success: false,
+        message: "Your seller account is awaiting admin approval",
+      });
+    }
+
+    // 6. Compare password
+    const isPasswordCorrect = await bcrypt.compare(
+      password,
+      user.password
+    );
+
+    if (!isPasswordCorrect) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid email or password",
+      });
+    }
+
+    // 7. Generate JWT
+    const token = generateToken(user);
+
+    // 8. Response
+    return res.status(200).json({
+      success: true,
+      message: "Login successful",
+
+      token,
+
+      user: {
+        id: user._id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        phone: user.phone,
+        role: user.role,
+        status: user.status,
+        isEmailVerified: user.isEmailVerified,
+        profileImage: user.profileImage,
+      },
+    });
+  } catch (error) {
+    console.error("Login Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Server error during login",
     });
   }
 };
