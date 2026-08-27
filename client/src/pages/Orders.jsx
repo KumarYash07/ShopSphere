@@ -1,15 +1,45 @@
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { FiPackage, FiMapPin, FiCreditCard, FiDownload } from 'react-icons/fi';
+import { FiPackage, FiMapPin, FiCreditCard } from 'react-icons/fi';
 import MainLayout from '../components/layout/MainLayout';
 import { useAuth } from '../context/AuthContext';
-import { orders } from '../data/dummy';
-import { formatPrice, getStatusColor } from '../utils/helpers';
+import { formatPrice } from '../utils/helpers';
+import { getMyOrdersApi } from '../api/orderApi';
 
-const STATUS_ICONS = { placed: '📝', confirmed: '✅', packed: '📦', shipped: '🚚', delivered: '🎉' };
+const STATUS_ICONS = {
+  pending: '⏳',
+  confirmed: '✅',
+  processing: '📦',
+  shipped: '🚚',
+  delivered: '🎉',
+  cancelled: '❌',
+};
 
 export default function Orders() {
   const { user, openLogin } = useAuth();
+  const [orders, setOrders] = useState([]);
+  const [loadingOrders, setLoadingOrders] = useState(true);
+
+  const fetchOrders = async () => {
+    setLoadingOrders(true);
+    try {
+      const data = await getMyOrdersApi();
+      if (data.success && Array.isArray(data.orders)) {
+        setOrders(data.orders);
+      }
+    } catch (err) {
+      console.error('Failed to load user orders:', err);
+    } finally {
+      setLoadingOrders(false);
+    }
+  };
+
+  useEffect(() => {
+    if (user) {
+      fetchOrders();
+    }
+  }, [user]);
 
   if (!user) {
     return (
@@ -30,111 +60,104 @@ export default function Orders() {
           <FiPackage size={24} style={{ color: 'var(--primary)' }} />
           <div>
             <h1 style={{ fontWeight: 800, fontSize: 28, margin: 0 }}>My Orders</h1>
-            <p style={{ color: 'var(--text-muted)', fontSize: 14, margin: 0 }}>{orders.length} orders placed</p>
+            <p style={{ color: 'var(--text-muted)', fontSize: 14, margin: 0 }}>
+              {orders.length} order{orders.length !== 1 ? 's' : ''} placed
+            </p>
           </div>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-          {orders.map((order, oi) => (
-            <motion.div
-              key={order.id}
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: oi * 0.1 }}
-              className="card-premium"
-              style={{ overflow: 'hidden' }}
-            >
-              {/* Order Header */}
-              <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--secondary-100)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10, background: 'var(--secondary-100)' }}>
-                <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
-                  <div>
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Order ID</div>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>{order.id}</div>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Placed On</div>
-                    <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>{order.date}</div>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Total</div>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--primary)' }}>{formatPrice(order.total)}</div>
-                  </div>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <span className={`badge-${getStatusColor(order.status)}`} style={{ textTransform: 'capitalize', fontSize: 12 }}>
-                    {STATUS_ICONS[order.status]} {order.status}
-                  </span>
-                  <button style={{ fontSize: 12, color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <FiDownload size={13} /> Invoice
-                  </button>
-                </div>
-              </div>
-
-              {/* Items */}
-              <div style={{ padding: '16px 20px' }}>
-                {order.items.map(item => (
-                  <div key={item.productId} style={{ display: 'flex', gap: 14, alignItems: 'center', marginBottom: 12 }}>
-                    <img src={item.image} alt={item.name} style={{ width: 60, height: 60, objectFit: 'cover', borderRadius: 'var(--radius-md)', flexShrink: 0 }} />
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>{item.name}</div>
-                      <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>Qty: {item.qty} · {formatPrice(item.price)}</div>
+        {loadingOrders ? (
+          <div className="text-center py-5">
+            <div className="spinner-border text-primary" role="status" />
+            <p className="text-muted small mt-2">Loading your orders...</p>
+          </div>
+        ) : orders.length === 0 ? (
+          <div className="empty-state" style={{ paddingTop: 40 }}>
+            <span className="empty-state-icon">🛍️</span>
+            <h3 className="empty-state-title">No Orders Placed Yet</h3>
+            <p className="empty-state-text">Explore our marketplace and place your first order!</p>
+            <Link to="/products" className="btn-primary-custom" style={{ display: 'inline-flex' }}>
+              Start Shopping →
+            </Link>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+            {orders.map((order, oi) => (
+              <motion.div
+                key={order._id}
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: oi * 0.05 }}
+                className="card-premium"
+                style={{ overflow: 'hidden' }}
+              >
+                {/* Order Header */}
+                <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--secondary-100)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10, background: 'var(--secondary-100)' }}>
+                  <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
+                    <div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Order Number</div>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>{order.orderNumber}</div>
                     </div>
-                    {order.status === 'delivered' && (
-                      <button className="btn-ghost" style={{ fontSize: 12, padding: '6px 14px' }}>Rate Product</button>
-                    )}
-                  </div>
-                ))}
-              </div>
-
-              {/* Tracking Timeline */}
-              <div style={{ padding: '16px 20px', borderTop: '1px solid var(--secondary-100)', background: 'var(--bg)' }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 16 }}>Tracking</div>
-                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', position: 'relative' }}>
-                  {/* Line */}
-                  <div style={{ position: 'absolute', top: 14, left: '10%', right: '10%', height: 2, background: 'var(--secondary-200)', zIndex: 0 }} />
-                  <div style={{ position: 'absolute', top: 14, left: '10%', height: 2, background: 'var(--success)', zIndex: 0, width: `${(order.timeline.filter(t => t.done).length - 1) / (order.timeline.length - 1) * 80}%` }} />
-
-                  {order.timeline.map((step, i) => (
-                    <div key={step.status} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1, position: 'relative', zIndex: 1 }}>
-                      <div style={{
-                        width: 28, height: 28, borderRadius: '50%',
-                        background: step.done ? 'var(--success)' : 'white',
-                        border: `3px solid ${step.current ? 'var(--primary)' : step.done ? 'var(--success)' : 'var(--secondary-300)'}`,
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        marginBottom: 8, fontSize: 11, color: step.done ? 'white' : 'var(--text-muted)',
-                        boxShadow: step.current ? 'var(--shadow-primary)' : 'none',
-                      }}>
-                        {step.done ? '✓' : STATUS_ICONS[step.status]}
+                    <div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Placed On</div>
+                      <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>
+                        {order.createdAt ? new Date(order.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : 'N/A'}
                       </div>
-                      <div style={{ textAlign: 'center' }}>
-                        <div style={{ fontSize: 11, fontWeight: step.done ? 700 : 500, color: step.done ? 'var(--text-primary)' : 'var(--text-muted)' }}>{step.label}</div>
-                        <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2, display: 'none' }} className="d-none d-md-block">{step.date}</div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Total Amount</div>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--primary)' }}>{formatPrice(order.totalAmount)}</div>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span className={`badge ${order.orderStatus === 'confirmed' || order.orderStatus === 'delivered' ? 'bg-success' : order.orderStatus === 'cancelled' ? 'bg-danger' : 'bg-warning text-dark'} px-2 py-1 text-capitalize`} style={{ fontSize: 12 }}>
+                      {STATUS_ICONS[order.orderStatus] || '📦'} {order.orderStatus}
+                    </span>
+                    <span className={`badge ${order.paymentStatus === 'paid' ? 'bg-success-subtle text-success' : 'bg-secondary-subtle text-dark'} px-2 py-1 text-uppercase`} style={{ fontSize: 10 }}>
+                      Payment: {order.paymentStatus}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Items */}
+                <div style={{ padding: '16px 20px' }}>
+                  {order.items && order.items.map((item, idx) => (
+                    <div key={idx} style={{ display: 'flex', gap: 14, alignItems: 'center', marginBottom: 12 }}>
+                      <img
+                        src={item.productImage || item.product?.images?.[0] || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=100'}
+                        alt={item.productName}
+                        style={{ width: 60, height: 60, objectFit: 'cover', borderRadius: 'var(--radius-md)', flexShrink: 0 }}
+                      />
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>{item.productName}</div>
+                        <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+                          Qty: {item.quantity} · {formatPrice(item.price)}
+                        </div>
+                      </div>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>
+                        {formatPrice(item.total)}
                       </div>
                     </div>
                   ))}
                 </div>
-              </div>
 
-              {/* Footer */}
-              <div style={{ padding: '14px 20px', borderTop: '1px solid var(--secondary-100)', display: 'flex', gap: 10, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--text-muted)', marginRight: 'auto' }}>
-                  <FiMapPin size={13} />
-                  {order.address.name} · {order.address.city}
+                {/* Footer / Address info */}
+                <div style={{ padding: '14px 20px', borderTop: '1px solid var(--secondary-100)', display: 'flex', gap: 16, justifyContent: 'space-between', flexWrap: 'wrap', alignItems: 'center', background: '#fafafa' }}>
+                  {order.shippingAddress && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--text-muted)' }}>
+                      <FiMapPin size={14} />
+                      <strong>{order.shippingAddress.fullName}</strong> · {order.shippingAddress.addressLine1}, {order.shippingAddress.city} - {order.shippingAddress.pincode}
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                    <FiCreditCard size={14} />
+                    {order.paymentMethod} ({order.paymentStatus})
+                  </div>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--text-muted)' }}>
-                  <FiCreditCard size={13} />
-                  {order.payment}
-                </div>
-                {order.status !== 'delivered' && order.status !== 'cancelled' && (
-                  <button style={{ fontSize: 13, color: 'var(--danger)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Cancel Order</button>
-                )}
-                {order.status === 'delivered' && (
-                  <button className="btn-ghost" style={{ fontSize: 12 }}>Return / Exchange</button>
-                )}
-              </div>
-            </motion.div>
-          ))}
-        </div>
+              </motion.div>
+            ))}
+          </div>
+        )}
       </div>
     </MainLayout>
   );

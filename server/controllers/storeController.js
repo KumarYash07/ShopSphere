@@ -1,5 +1,22 @@
 import Store from "../models/Store.js";
 
+const normalizeAddress = (addr) => {
+  if (!addr) return undefined;
+  if (typeof addr === "string") {
+    return { street: addr };
+  }
+  if (typeof addr === "object") {
+    return {
+      street: addr.street || "",
+      city: addr.city || "",
+      state: addr.state || "",
+      pincode: addr.pincode || "",
+      country: addr.country || "",
+    };
+  }
+  return addr;
+};
+
 export const createStore = async (req, res) => {
   try {
     const { storeName, description, gstNumber, address } = req.body;
@@ -44,7 +61,7 @@ export const createStore = async (req, res) => {
       storeName,
       description,
       gstNumber,
-      address,
+      address: normalizeAddress(address),
     });
 
     return res.status(201).json({
@@ -125,7 +142,7 @@ export const updateMyStore = async (req, res) => {
     }
 
     if (address !== undefined) {
-      store.address = address;
+      store.address = normalizeAddress(address);
     }
 
     if (logo !== undefined) {

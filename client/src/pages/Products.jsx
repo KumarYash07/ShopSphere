@@ -1,16 +1,17 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { FiFilter, FiGrid, FiList, FiChevronDown, FiX } from 'react-icons/fi';
-import MainLayout from '../components/layout/MainLayout';
+import { FiFilter, FiX, FiRefreshCw } from 'react-icons/fi';
+import Navbar from '../components/navbar/Navbar';
+import Footer from '../components/footer/Footer';
 import ProductCard from '../components/product/ProductCard';
-import { products, categories } from '../data/dummy';
+import { getProductsApi } from '../api/productApi';
+import { getCategoriesApi } from '../api/categoryApi';
 
 const SORT_OPTIONS = [
-  { value: 'popular', label: 'Most Popular' },
   { value: 'newest', label: 'Newest First' },
-  { value: 'price-low', label: 'Price: Low to High' },
-  { value: 'price-high', label: 'Price: High to Low' },
+  { value: 'price_low', label: 'Price: Low to High' },
+  { value: 'price_high', label: 'Price: High to Low' },
   { value: 'rating', label: 'Highest Rated' },
 ];
 
@@ -19,247 +20,312 @@ const PRICE_RANGES = [
   { label: '₹1,000 – ₹5,000', min: 1000, max: 5000 },
   { label: '₹5,000 – ₹20,000', min: 5000, max: 20000 },
   { label: '₹20,000 – ₹1,00,000', min: 20000, max: 100000 },
-  { label: 'Over ₹1,00,000', min: 100000, max: Infinity },
+  { label: 'Over ₹1,00,000', min: 100000, max: 10000000 },
 ];
 
 export default function Products() {
-  const [searchParams] = useSearchParams();
-  const categoryFilter = searchParams.get('category') || '';
-  const filterType = searchParams.get('filter') || '';
-  const searchQuery = searchParams.get('q') || '';
+  const [searchParams, setSearchParams] = useSearchParams();
 
-  const [sort, setSort] = useState('popular');
-  const [selectedCategory, setSelectedCategory] = useState(categoryFilter);
-  const [selectedBrands, setSelectedBrands] = useState([]);
-  const [selectedPrice, setSelectedPrice] = useState(null);
-  const [minRating, setMinRating] = useState(0);
-  const [viewMode, setViewMode] = useState('grid');
-  const [showFilters, setShowFilters] = useState(false);
+  const searchQuery = searchParams.get('search') || searchParams.get('q') || '';
+  const categoryParam = searchParams.get('category') || '';
+  const sortParam = searchParams.get('sort') || 'newest';
+
+  const [products, setProducts] = useState([]);
+  const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
+  const [selectedCategory, setSelectedCategory] = useState(categoryParam);
+  const [selectedPriceRange, setSelectedPriceRange] = useState(null);
+  const [sortOption, setSortOption] = useState(sortParam);
+  const [showMobileFilters, setShowMobileFilters] = useState(false);
+
+  // Sync category param change
   useEffect(() => {
-    setLoading(true);
-    const t = setTimeout(() => setLoading(false), 600);
-    return () => clearTimeout(t);
+    setSelectedCategory(categoryParam);
+  }, [categoryParam]);
+
+  // Sync sort param change
+  useEffect(() => {
+    setSortOption(sortParam);
+  }, [sortParam]);
+
+  // Load categories
+  useEffect(() => {
+    const loadCategories = async () => {
+      try {
+        const data = await getCategoriesApi();
+        if (data.success && data.categories) {
+          setCategories(data.categories);
+        }
+      } catch (err) {
+        console.error('Failed to load categories:', err);
+      }
+    };
+    loadCategories();
   }, []);
 
-  const brands = [...new Set(products.map(p => p.brand))];
+  // Fetch products from backend API
+  const fetchProducts = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const params = {};
+      if (searchQuery) params.search = searchQuery;
+      if (selectedCategory) params.category = selectedCategory;
+      if (sortOption) params.sort = sortOption;
+      if (selectedPriceRange) {
+        params.minPrice = selectedPriceRange.min;
+        if (selectedPriceRange.max < 10000000) {
+          params.maxPrice = selectedPriceRange.max;
+        }
+      }
 
-  let filtered = [...products];
-  if (searchQuery) filtered = filtered.filter(p => p.name.toLowerCase().includes(searchQuery.toLowerCase()) || p.brand.toLowerCase().includes(searchQuery.toLowerCase()) || p.category.toLowerCase().includes(searchQuery.toLowerCase()));
-  if (selectedCategory) filtered = filtered.filter(p => p.category === selectedCategory || p.subcategory === selectedCategory);
-  if (filterType === 'new') filtered = filtered.filter(p => p.isNew);
-  if (filterType === 'trending') filtered = filtered.slice(0, 8);
-  if (filterType === 'bestsellers') filtered = filtered.filter(p => p.isBestSeller);
-  if (selectedBrands.length) filtered = filtered.filter(p => selectedBrands.includes(p.brand));
-  if (selectedPrice) filtered = filtered.filter(p => p.price >= selectedPrice.min && p.price < selectedPrice.max);
-  if (minRating) filtered = filtered.filter(p => p.rating >= minRating);
+      const data = await getProductsApi(params);
+      if (data.success && data.products) {
+        setProducts(data.products);
+      } else {
+        setProducts([]);
+      }
+    } catch (err) {
+      console.error('Fetch products error:', err);
+      setError('Unable to load products. Please check your backend connection.');
+    } finally {
+      setLoading(false);
+    }
+  }, [searchQuery, selectedCategory, sortOption, selectedPriceRange]);
 
-  filtered.sort((a, b) => {
-    if (sort === 'price-low') return a.price - b.price;
-    if (sort === 'price-high') return b.price - a.price;
-    if (sort === 'rating') return b.rating - a.rating;
-    if (sort === 'newest') return b.id - a.id;
-    return b.reviews - a.reviews;
-  });
+  useEffect(() => {
+    fetchProducts();
+  }, [fetchProducts]);
 
-  const toggleBrand = (brand) => {
-    setSelectedBrands(prev => prev.includes(brand) ? prev.filter(b => b !== brand) : [...prev, brand]);
+  const handleCategorySelect = (catId) => {
+    setSelectedCategory(catId);
+    if (catId) {
+      searchParams.set('category', catId);
+    } else {
+      searchParams.delete('category');
+    }
+    setSearchParams(searchParams);
   };
 
-  const clearFilters = () => {
+  const handleSortSelect = (sortVal) => {
+    setSortOption(sortVal);
+    searchParams.set('sort', sortVal);
+    setSearchParams(searchParams);
+  };
+
+  const clearAllFilters = () => {
     setSelectedCategory('');
-    setSelectedBrands([]);
-    setSelectedPrice(null);
-    setMinRating(0);
-    setSort('popular');
+    setSelectedPriceRange(null);
+    setSortOption('newest');
+    setSearchParams({});
   };
 
-  const hasFilters = selectedCategory || selectedBrands.length || selectedPrice || minRating || sort !== 'popular';
+  const isFiltered = selectedCategory || selectedPriceRange || searchQuery || sortOption !== 'newest';
 
-  const FilterPanel = () => (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-      {/* Categories */}
+  const SidebarFilters = () => (
+    <div className="d-flex flex-column gap-4">
+      {/* Category Filter */}
       <div>
-        <h6 style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>Category</h6>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <h6 className="fw-bold text-uppercase text-muted mb-3" style={{ fontSize: 12, letterSpacing: '0.05em' }}>
+          Categories
+        </h6>
+        <div className="list-group list-group-flush rounded-3 border-0">
           <button
-            className={`tag ${!selectedCategory ? 'active' : ''}`}
-            style={{ justifyContent: 'flex-start' }}
-            onClick={() => setSelectedCategory('')}
-          >All Categories</button>
-          {categories.map(cat => (
+            type="button"
+            className={`list-group-item list-group-item-action border-0 py-2 px-3 fw-medium ${!selectedCategory ? 'bg-primary text-white active rounded-2' : 'text-dark'}`}
+            onClick={() => handleCategorySelect('')}
+          >
+            All Categories
+          </button>
+          {categories.map((cat) => (
             <button
-              key={cat.id}
-              className={`tag ${selectedCategory === cat.name ? 'active' : ''}`}
-              style={{ justifyContent: 'flex-start' }}
-              onClick={() => setSelectedCategory(cat.name)}
-            >{cat.icon} {cat.name}</button>
+              key={cat._id}
+              type="button"
+              className={`list-group-item list-group-item-action border-0 py-2 px-3 fw-medium ${selectedCategory === cat._id ? 'bg-primary text-white active rounded-2' : 'text-dark'}`}
+              onClick={() => handleCategorySelect(cat._id)}
+            >
+              {cat.name}
+            </button>
           ))}
         </div>
       </div>
 
-      {/* Price Range */}
+      {/* Price Range Filter */}
       <div>
-        <h6 style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>Price Range</h6>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {PRICE_RANGES.map(range => (
-            <button
-              key={range.label}
-              className={`tag ${selectedPrice?.label === range.label ? 'active' : ''}`}
-              style={{ justifyContent: 'flex-start' }}
-              onClick={() => setSelectedPrice(selectedPrice?.label === range.label ? null : range)}
-            >{range.label}</button>
-          ))}
+        <h6 className="fw-bold text-uppercase text-muted mb-3" style={{ fontSize: 12, letterSpacing: '0.05em' }}>
+          Price Range
+        </h6>
+        <div className="d-flex flex-column gap-2">
+          {PRICE_RANGES.map((range) => {
+            const isSelected = selectedPriceRange?.label === range.label;
+            return (
+              <button
+                key={range.label}
+                type="button"
+                className={`btn btn-sm text-start py-2 px-3 rounded-2 fw-medium ${isSelected ? 'btn-primary' : 'btn-light text-secondary'}`}
+                onClick={() => setSelectedPriceRange(isSelected ? null : range)}
+              >
+                {range.label}
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      {/* Brands */}
-      <div>
-        <h6 style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>Brand</h6>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {brands.map(brand => (
-            <label key={brand} style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', padding: '6px 0' }}>
-              <input type="checkbox" checked={selectedBrands.includes(brand)} onChange={() => toggleBrand(brand)} style={{ accentColor: 'var(--primary)', width: 15, height: 15 }} />
-              <span style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 500 }}>{brand}</span>
-            </label>
-          ))}
-        </div>
-      </div>
-
-      {/* Rating */}
-      <div>
-        <h6 style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>Min Rating</h6>
-        {[4, 3, 2].map(r => (
-          <button
-            key={r}
-            className={`tag mb-2 ${minRating === r ? 'active' : ''}`}
-            style={{ justifyContent: 'flex-start' }}
-            onClick={() => setMinRating(minRating === r ? 0 : r)}
-          >{'★'.repeat(r)} & above</button>
-        ))}
-      </div>
-
-      {hasFilters && (
-        <button className="btn-ghost" style={{ color: 'var(--danger)', borderColor: 'var(--danger)', fontSize: 13 }} onClick={clearFilters}>
-          <FiX size={14} /> Clear All Filters
+      {/* Clear Filters Button */}
+      {isFiltered && (
+        <button
+          type="button"
+          onClick={clearAllFilters}
+          className="btn btn-outline-danger btn-sm rounded-3 py-2 fw-semibold d-flex align-items-center justify-content-center gap-2"
+        >
+          <FiX /> Clear Filters
         </button>
       )}
     </div>
   );
 
   return (
-    <MainLayout>
-      <div style={{ padding: '32px 24px', maxWidth: 1440, margin: '0 auto' }}>
-        {/* Header */}
-        <div style={{ marginBottom: 32 }}>
-          <h1 style={{ fontSize: 'clamp(1.5rem, 3vw, 2rem)', fontWeight: 800, marginBottom: 4 }}>
-            {searchQuery ? `Results for "${searchQuery}"` : selectedCategory || filterType ? `${selectedCategory || filterType}` : 'All Products'}
-          </h1>
-          <p style={{ color: 'var(--text-muted)', fontSize: 14 }}>{filtered.length} products found</p>
-        </div>
+    <>
+      <Navbar />
+      <div className="bg-light py-4 min-vh-100">
+        <div className="container">
+          
+          {/* Header Banner */}
+          <div className="d-flex flex-column flex-md-row align-items-md-center justify-content-between mb-4 pb-2 border-bottom">
+            <div>
+              <h2 className="fw-bold text-dark mb-1">
+                {searchQuery ? `Search results for "${searchQuery}"` : 'Browse Products'}
+              </h2>
+              <p className="text-muted small mb-0">
+                {loading ? 'Searching catalog...' : `${products.length} products available`}
+              </p>
+            </div>
 
-        <div className="row g-4">
-          {/* Sidebar Filters (desktop) */}
-          <div className="col-lg-3 d-none d-lg-block">
-            <div className="card-premium" style={{ padding: 24, position: 'sticky', top: 'calc(var(--navbar-height) + 16px)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-                <h5 style={{ fontWeight: 700, margin: 0 }}>Filters</h5>
-                {hasFilters && <button onClick={clearFilters} style={{ fontSize: 12, color: 'var(--danger)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Clear All</button>}
+            {/* Sort & Mobile Filter Toggle */}
+            <div className="d-flex align-items-center gap-2 mt-3 mt-md-0">
+              <button
+                type="button"
+                className="btn btn-outline-secondary d-lg-none d-flex align-items-center gap-2 btn-sm rounded-pill px-3"
+                onClick={() => setShowMobileFilters(true)}
+              >
+                <FiFilter /> Filters {isFiltered && <span className="badge bg-primary rounded-circle p-1"></span>}
+              </button>
+
+              <div className="d-flex align-items-center gap-2">
+                <span className="small text-muted fw-semibold">Sort By:</span>
+                <select
+                  className="form-select form-select-sm rounded-3 fw-semibold border-secondary-subtle"
+                  value={sortOption}
+                  onChange={(e) => handleSortSelect(e.target.value)}
+                  style={{ minWidth: 160 }}
+                >
+                  {SORT_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
               </div>
-              <FilterPanel />
             </div>
           </div>
 
-          {/* Main Content */}
-          <div className="col-12 col-lg-9">
-            {/* Toolbar */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, gap: 12, flexWrap: 'wrap' }}>
-              <button className="btn-ghost d-lg-none" onClick={() => setShowFilters(true)}>
-                <FiFilter size={14} /> Filters {hasFilters && `(Active)`}
-              </button>
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginLeft: 'auto' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontSize: 13, color: 'var(--text-muted)', fontWeight: 500 }}>Sort:</span>
-                  <select
-                    value={sort}
-                    onChange={e => setSort(e.target.value)}
-                    style={{ border: '2px solid var(--secondary-200)', borderRadius: 'var(--radius-md)', padding: '7px 12px', fontSize: 13, fontFamily: 'var(--font-primary)', fontWeight: 600, color: 'var(--text-primary)', outline: 'none', cursor: 'pointer' }}
-                  >
-                    {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                  </select>
-                </div>
-                <div style={{ display: 'flex', border: '2px solid var(--secondary-200)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
-                  {[{ mode: 'grid', Icon: FiGrid }, { mode: 'list', Icon: FiList }].map(({ mode, Icon }) => (
-                    <button key={mode} onClick={() => setViewMode(mode)} style={{ padding: '7px 10px', background: viewMode === mode ? 'var(--primary)' : 'white', color: viewMode === mode ? 'white' : 'var(--text-muted)', border: 'none', cursor: 'pointer', transition: 'all 0.2s' }}>
-                      <Icon size={16} />
+          <div className="row g-4">
+            {/* Desktop Sidebar Filters */}
+            <div className="col-lg-3 d-none d-lg-block">
+              <div className="card border-0 shadow-sm rounded-4 p-4 sticky-top" style={{ top: 90 }}>
+                <div className="d-flex align-items-center justify-content-between mb-3 border-bottom pb-2">
+                  <h5 className="fw-bold mb-0">Filters</h5>
+                  {isFiltered && (
+                    <button onClick={clearAllFilters} className="btn btn-link btn-sm text-danger text-decoration-none p-0">
+                      Reset
                     </button>
-                  ))}
+                  )}
                 </div>
+                <SidebarFilters />
               </div>
             </div>
 
-            {/* Products */}
-            {loading ? (
-              <div className="product-grid">
-                {Array.from({ length: 8 }).map((_, i) => (
-                  <div key={i} className="card-premium" style={{ overflow: 'hidden' }}>
-                    <div className="skeleton" style={{ aspectRatio: '1/1' }} />
-                    <div style={{ padding: 14 }}>
-                      <div className="skeleton" style={{ height: 12, width: '60%', marginBottom: 8 }} />
-                      <div className="skeleton" style={{ height: 14, width: '90%', marginBottom: 8 }} />
-                      <div className="skeleton" style={{ height: 12, width: '40%' }} />
+            {/* Main Product Grid Area */}
+            <div className="col-12 col-lg-9">
+              {error && (
+                <div className="alert alert-danger d-flex align-items-center justify-content-between p-3 rounded-3 mb-4">
+                  <div>{error}</div>
+                  <button className="btn btn-sm btn-outline-danger" onClick={fetchProducts}>
+                    <FiRefreshCw /> Retry
+                  </button>
+                </div>
+              )}
+
+              {loading ? (
+                <div className="row g-3">
+                  {[1, 2, 3, 4, 5, 6].map((n) => (
+                    <div key={n} className="col-6 col-md-4">
+                      <div className="card border-0 shadow-sm rounded-4 p-3" style={{ height: 320 }}>
+                        <div className="bg-secondary-subtle rounded-3 h-50 mb-3 animate-pulse" />
+                        <div className="bg-secondary-subtle rounded w-75 h-4 mb-2 animate-pulse" />
+                        <div className="bg-secondary-subtle rounded w-50 h-4 animate-pulse" />
+                      </div>
                     </div>
+                  ))}
+                </div>
+              ) : products.length === 0 ? (
+                <div className="card border-0 shadow-sm rounded-4 text-center p-5 my-3">
+                  <div className="display-4 mb-3 text-muted">🛍️</div>
+                  <h4 className="fw-bold text-dark">No Products Found</h4>
+                  <p className="text-muted small mb-4">
+                    We couldn't find any products matching your selected criteria. Try adjusting your filters or search terms.
+                  </p>
+                  <div>
+                    <button onClick={clearAllFilters} className="btn btn-primary rounded-pill px-4 fw-bold">
+                      Clear All Filters
+                    </button>
                   </div>
-                ))}
-              </div>
-            ) : filtered.length === 0 ? (
-              <div className="empty-state">
-                <span className="empty-state-icon">🔍</span>
-                <h3 className="empty-state-title">No products found</h3>
-                <p className="empty-state-text">Try adjusting your filters or search query</p>
-                <button className="btn-primary-custom" onClick={clearFilters}>Clear Filters</button>
-              </div>
-            ) : (
-              <div className={viewMode === 'grid' ? 'product-grid' : 'row g-3'}>
-                {filtered.map((product, i) => (
-                  <motion.div
-                    key={product.id}
-                    className={viewMode === 'list' ? 'col-12' : ''}
-                    initial={{ opacity: 0, y: 12 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.3, delay: i * 0.04 }}
-                  >
-                    <ProductCard product={product} />
-                  </motion.div>
-                ))}
-              </div>
-            )}
+                </div>
+              ) : (
+                <div className="row g-3">
+                  {products.map((product, i) => (
+                    <div key={product._id || product.id} className="col-6 col-md-4">
+                      <motion.div
+                        initial={{ opacity: 0, y: 15 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.25, delay: i * 0.03 }}
+                        className="h-100"
+                      >
+                        <ProductCard product={product} />
+                      </motion.div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Mobile Filter Drawer */}
-      {showFilters && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 'var(--z-modal)', display: 'flex' }}>
-          <div style={{ flex: 1, background: 'rgba(0,0,0,0.5)' }} onClick={() => setShowFilters(false)} />
-          <motion.div
-            initial={{ x: '100%' }}
-            animate={{ x: 0 }}
-            style={{ width: 300, background: 'white', overflowY: 'auto', padding: 24 }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
-              <h5 style={{ fontWeight: 700, margin: 0 }}>Filters</h5>
-              <button onClick={() => setShowFilters(false)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><FiX size={20} /></button>
+      {/* Mobile Filters Offcanvas / Modal */}
+      {showMobileFilters && (
+        <div className="position-fixed inset-0 z-3 d-flex" style={{ zIndex: 1060 }}>
+          <div className="flex-grow-1 bg-dark opacity-50" onClick={() => setShowMobileFilters(false)} />
+          <div className="bg-white p-4 overflow-y-auto" style={{ width: 300 }}>
+            <div className="d-flex align-items-center justify-content-between mb-4 border-bottom pb-2">
+              <h5 className="fw-bold mb-0">Filters</h5>
+              <button className="btn-close" onClick={() => setShowMobileFilters(false)} />
             </div>
-            <FilterPanel />
-            <button className="btn-primary-custom" style={{ width: '100%', justifyContent: 'center', marginTop: 24 }} onClick={() => setShowFilters(false)}>
-              Apply Filters ({filtered.length} results)
+            <SidebarFilters />
+            <button
+              className="btn btn-primary w-100 mt-4 rounded-pill fw-bold"
+              onClick={() => setShowMobileFilters(false)}
+            >
+              Apply Filters ({products.length})
             </button>
-          </motion.div>
+          </div>
         </div>
       )}
-    </MainLayout>
+
+      <Footer />
+    </>
   );
 }

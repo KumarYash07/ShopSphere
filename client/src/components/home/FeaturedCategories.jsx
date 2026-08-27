@@ -1,87 +1,108 @@
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
-import { categories } from '../../data/dummy';
+import { getCategoriesApi } from '../../api/categoryApi';
+
+const DEFAULT_COLORS = ['#4F46E5', '#059669', '#D97706', '#DC2626', '#7C3AED', '#0284C7', '#DB2777', '#475569'];
 
 export default function FeaturedCategories() {
+  const [categories, setCategories] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchCategories = async () => {
+      try {
+        setLoading(true);
+        const data = await getCategoriesApi();
+        if (data.success && data.categories) {
+          setCategories(data.categories);
+        }
+      } catch (err) {
+        console.error('Failed to load featured categories:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchCategories();
+  }, []);
+
   return (
-    <section style={{ padding: '60px 24px 0', maxWidth: 1440, margin: '0 auto' }}>
-      <div className="section-header d-flex align-items-end justify-content-between">
+    <section className="container py-4 my-2">
+      <div className="d-flex align-items-end justify-content-between mb-4">
         <div>
-          <div className="section-tag">🛒 Shop by Category</div>
-          <h2 className="section-title">Explore Our World</h2>
-          <p className="section-subtitle">Discover thousands of products across every category</p>
+          <div className="badge bg-primary-subtle text-primary px-3 py-2 rounded-pill fw-bold text-uppercase mb-2" style={{ background: '#eef2ff', color: '#4F46E5', fontSize: 11 }}>
+            🛒 Shop by Category
+          </div>
+          <h2 className="fw-bold text-dark mb-1">Explore Marketplace</h2>
+          <p className="text-muted mb-0 small">Browse products curated across top active categories</p>
         </div>
-        <Link to="/categories" className="btn-outline-custom d-none d-md-inline-flex" style={{ fontSize: 13, marginBottom: 16, padding: '8px 20px' }}>
+        <Link to="/categories" className="btn btn-outline-primary rounded-pill px-4 btn-sm fw-semibold d-none d-md-inline-flex">
           All Categories →
         </Link>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }} className="categories-grid">
-        {categories.slice(0, 8).map((cat, i) => (
-          <motion.div
-            key={cat.id}
-            initial={{ opacity: 0, y: 24 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.4, delay: i * 0.07 }}
-          >
-            <Link
-              to={`/products?category=${cat.name}`}
-              style={{ textDecoration: 'none' }}
-            >
-              <div
-                className="category-card"
-                style={{
-                  background: `linear-gradient(135deg, ${cat.color}18 0%, ${cat.color}08 100%)`,
-                  border: `1px solid ${cat.color}25`,
-                  padding: 20,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  gap: 12,
-                  textAlign: 'center',
-                }}
-              >
-                <div style={{
-                  width: 64, height: 64,
-                  background: `linear-gradient(135deg, ${cat.color}25 0%, ${cat.color}10 100%)`,
-                  borderRadius: 18,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: 28,
-                  boxShadow: `0 4px 16px ${cat.color}20`,
-                }}>
-                  {cat.icon}
-                </div>
-                <div>
-                  <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)', marginBottom: 4 }}>{cat.name}</div>
-                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{cat.productCount.toLocaleString()} items</div>
-                </div>
-                <div style={{
-                  width: '100%', height: 3,
-                  background: `linear-gradient(90deg, ${cat.color} 0%, transparent 100%)`,
-                  borderRadius: 'var(--radius-full)',
-                  opacity: 0.4,
-                }} />
+      {loading ? (
+        <div className="row g-3">
+          {[1, 2, 3, 4].map((n) => (
+            <div key={n} className="col-6 col-md-3">
+              <div className="card border-0 shadow-sm rounded-4 p-4 text-center">
+                <div className="bg-secondary-subtle rounded-circle mx-auto mb-3 animate-pulse" style={{ width: 60, height: 60 }} />
+                <div className="bg-secondary-subtle rounded w-50 mx-auto h-4 animate-pulse" />
               </div>
-            </Link>
-          </motion.div>
-        ))}
-      </div>
-
-      <style>{`
-        .categories-grid {
-          grid-template-columns: repeat(4, 1fr);
-        }
-        @media (max-width: 992px) {
-          .categories-grid { grid-template-columns: repeat(4, 1fr); }
-        }
-        @media (max-width: 768px) {
-          .categories-grid { grid-template-columns: repeat(3, 1fr); }
-        }
-        @media (max-width: 480px) {
-          .categories-grid { grid-template-columns: repeat(2, 1fr); }
-        }
-      `}</style>
+            </div>
+          ))}
+        </div>
+      ) : categories.length === 0 ? (
+        <div className="text-center py-4 bg-light rounded-4">
+          <p className="text-muted mb-0">No categories found in store.</p>
+        </div>
+      ) : (
+        <div className="row g-3">
+          {categories.slice(0, 8).map((cat, i) => {
+            const color = DEFAULT_COLORS[i % DEFAULT_COLORS.length];
+            return (
+              <div key={cat._id} className="col-6 col-md-4 col-lg-3">
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ duration: 0.3, delay: i * 0.05 }}
+                >
+                  <Link
+                    to={`/products?category=${cat._id}`}
+                    className="text-decoration-none"
+                  >
+                    <div
+                      className="card border-0 shadow-sm rounded-4 p-4 text-center h-100 position-relative overflow-hidden hover-lift"
+                      style={{
+                        background: `linear-gradient(135deg, ${color}12 0%, ${color}04 100%)`,
+                        border: `1px solid ${color}20`,
+                        transition: 'all 0.3s ease',
+                      }}
+                    >
+                      <div
+                        className="rounded-4 d-flex align-items-center justify-content-center mx-auto mb-3 shadow-sm"
+                        style={{
+                          width: 60,
+                          height: 60,
+                          background: color,
+                          color: 'white',
+                          fontSize: 24,
+                          fontWeight: 'bold',
+                        }}
+                      >
+                        {cat.name.charAt(0).toUpperCase()}
+                      </div>
+                      <h6 className="fw-bold text-dark mb-1">{cat.name}</h6>
+                      <span className="small text-muted text-truncate d-block">{cat.description || 'Explore collection'}</span>
+                    </div>
+                  </Link>
+                </motion.div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </section>
   );
 }

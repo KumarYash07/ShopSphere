@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
-  FiMail, FiLock, FiEye, FiEyeOff, FiArrowLeft, FiAlertCircle
+  FiMail, FiLock, FiEye, FiEyeOff, FiArrowLeft, FiAlertCircle, FiCheckCircle
 } from 'react-icons/fi';
 import { FcGoogle } from 'react-icons/fc';
 import { useAuth } from '../context/AuthContext';
@@ -10,55 +10,61 @@ import { useAuth } from '../context/AuthContext';
 export default function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const location = useLocation();
+
+  const redirectUrl = searchParams.get('redirect') || null;
+  const initialMsg = location.state?.message || null;
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPass, setShowPass] = useState(false);
   const [error, setError] = useState('');
+  const [infoMsg, setInfoMsg] = useState(initialMsg);
   const [loading, setLoading] = useState(false);
   const [remember, setRemember] = useState(true);
+  const [showGoogleNotice, setShowGoogleNotice] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    setInfoMsg(null);
+
     if (!email || !password) {
-      setError('Please enter both email and password');
+      setError('Please enter both email and password.');
       return;
     }
+
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 600));
-    const res = login(email, password);
+    const res = await login(email.trim(), password);
     setLoading(false);
+
     if (res.success) {
-      if (res.user.role === 'admin') navigate('/admin');
-      else if (res.user.role === 'seller') navigate('/seller');
-      else navigate('/dashboard');
+      const userRole = res.user?.role;
+      if (redirectUrl) {
+        navigate(redirectUrl);
+      } else if (userRole === 'admin') {
+        navigate('/admin');
+      } else if (userRole === 'host') {
+        navigate('/seller');
+      } else {
+        navigate('/dashboard');
+      }
     } else {
       setError(res.error || 'Invalid credentials');
     }
   };
 
-  const demoLogin = (role) => {
-    const creds = {
-      customer: { email: 'customer@demo.com', password: 'demo123' },
-      seller: { email: 'seller@demo.com', password: 'demo123' },
-      admin: { email: 'admin@demo.com', password: 'demo123' },
-    };
-    setEmail(creds[role].email);
-    setPassword(creds[role].password);
-    setError('');
-  };
-
   return (
     <div
       style={{
-        height: '100vh',
+        minHeight: '100vh',
         width: '100vw',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
         background: 'linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%)',
-        padding: '16px',
-        overflow: 'hidden',
+        padding: '20px',
         position: 'relative',
       }}
     >
@@ -75,20 +81,7 @@ export default function LoginPage() {
           pointerEvents: 'none',
         }}
       />
-      <div
-        style={{
-          position: 'absolute',
-          bottom: '15%',
-          right: '20%',
-          width: 350,
-          height: 350,
-          background: 'radial-gradient(circle, rgba(249,115,22,0.15) 0%, transparent 70%)',
-          borderRadius: '50%',
-          pointerEvents: 'none',
-        }}
-      />
 
-      {/* Centered Login Card */}
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
@@ -99,33 +92,32 @@ export default function LoginPage() {
           width: '100%',
           maxWidth: 440,
           background: 'white',
-          borderRadius: 'var(--radius-2xl)',
-          padding: '28px 32px 28px',
+          borderRadius: 20,
+          padding: '32px',
           boxShadow: '0 25px 60px -15px rgba(0,0,0,0.5)',
-          border: '1px solid rgba(255,255,255,0.2)',
         }}
       >
         {/* Card Header */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
           <Link to="/" style={{ display: 'flex', alignItems: 'center', gap: 8, textDecoration: 'none' }}>
             <div
               style={{
-                width: 34,
-                height: 34,
-                background: 'linear-gradient(135deg, var(--primary) 0%, #7C3AED 100%)',
-                borderRadius: 9,
+                width: 36,
+                height: 36,
+                background: 'linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%)',
+                borderRadius: 10,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 color: 'white',
                 fontWeight: 900,
-                fontSize: 16,
+                fontSize: 18,
               }}
             >
               S
             </div>
-            <span style={{ fontWeight: 900, fontSize: 18, color: 'var(--secondary-900)' }}>
-              Shop<span style={{ color: 'var(--primary)' }}>Sphere</span>
+            <span style={{ fontWeight: 900, fontSize: 20, color: '#0f172a' }}>
+              Shop<span style={{ color: '#4F46E5' }}>Sphere</span>
             </span>
           </Link>
 
@@ -137,33 +129,31 @@ export default function LoginPage() {
               gap: 4,
               fontSize: 12,
               fontWeight: 600,
-              color: 'var(--text-muted)',
-              padding: '4px 10px',
-              borderRadius: 'var(--radius-md)',
-              background: 'var(--secondary-100)',
+              color: '#64748b',
+              padding: '6px 12px',
+              borderRadius: 8,
+              background: '#f1f5f9',
               textDecoration: 'none',
-              transition: 'all 0.2s',
             }}
           >
-            <FiArrowLeft size={14} /> Back to Shop
+            <FiArrowLeft size={14} /> Back Home
           </Link>
         </div>
 
         {/* Tab Switcher */}
-        <div style={{ display: 'flex', background: 'var(--secondary-100)', borderRadius: 'var(--radius-full)', padding: 3, marginBottom: 16 }}>
+        <div style={{ display: 'flex', background: '#f1f5f9', borderRadius: 99, padding: 3, marginBottom: 20 }}>
           <button
             type="button"
             style={{
               flex: 1,
-              padding: '7px 12px',
-              borderRadius: 'var(--radius-full)',
+              padding: '8px',
+              borderRadius: 99,
               border: 'none',
               background: 'white',
-              color: 'var(--primary)',
+              color: '#4F46E5',
               fontWeight: 700,
               fontSize: 13,
-              boxShadow: 'var(--shadow-sm)',
-              cursor: 'default',
+              boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
             }}
           >
             Sign In
@@ -173,184 +163,140 @@ export default function LoginPage() {
             onClick={() => navigate('/register')}
             style={{
               flex: 1,
-              padding: '7px 12px',
-              borderRadius: 'var(--radius-full)',
+              padding: '8px',
+              borderRadius: 99,
               border: 'none',
               background: 'transparent',
-              color: 'var(--text-muted)',
+              color: '#64748b',
               fontWeight: 600,
               fontSize: 13,
               cursor: 'pointer',
             }}
           >
-            Create Account
+            Register
           </button>
         </div>
 
-        {/* Quick Demo Login Bar */}
-        <div style={{ background: 'var(--primary-10)', border: '1px solid var(--primary-20)', borderRadius: 'var(--radius-md)', padding: '10px 12px', marginBottom: 14 }}>
-          <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--primary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
-            🚀 Quick 1-Click Demo Login:
-          </div>
-          <div style={{ display: 'flex', gap: 6 }}>
-            {[
-              { role: 'customer', label: 'Customer' },
-              { role: 'seller', label: 'Seller' },
-              { role: 'admin', label: 'Admin' },
-            ].map((item) => (
-              <button
-                key={item.role}
-                type="button"
-                onClick={() => demoLogin(item.role)}
-                style={{
-                  flex: 1,
-                  padding: '5px 4px',
-                  fontSize: 11,
-                  fontWeight: 700,
-                  background: 'white',
-                  border: '1.5px solid var(--primary-20)',
-                  borderRadius: 'var(--radius-sm)',
-                  cursor: 'pointer',
-                  color: 'var(--primary)',
-                  transition: 'all 0.2s',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'var(--primary)';
-                  e.currentTarget.style.color = 'white';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'white';
-                  e.currentTarget.style.color = 'var(--primary)';
-                }}
-              >
-                {item.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Google Button */}
+        {/* Google OAuth Button */}
         <button
           type="button"
+          onClick={() => setShowGoogleNotice(true)}
           style={{
             width: '100%',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             gap: 8,
-            padding: '9px',
-            border: '2px solid var(--secondary-200)',
-            borderRadius: 'var(--radius-md)',
+            padding: '10px',
+            border: '1.5px solid #cbd5e1',
+            borderRadius: 10,
             background: 'white',
-            fontSize: 13,
+            fontSize: 14,
             fontWeight: 600,
             cursor: 'pointer',
-            transition: 'all 0.2s',
-            marginBottom: 14,
-            color: 'var(--text-primary)',
+            marginBottom: 16,
+            color: '#334155',
           }}
-          onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'var(--secondary-400)')}
-          onMouseLeave={(e) => (e.currentTarget.style.borderColor = 'var(--secondary-200)')}
         >
-          <FcGoogle size={18} /> Continue with Google
+          <FcGoogle size={20} /> Continue with Google
         </button>
 
+        {showGoogleNotice && (
+          <div className="alert alert-info py-2 px-3 mb-3 small d-flex justify-content-between align-items-center">
+            <span>Google OAuth integration pending (backend API not configured yet).</span>
+            <button className="btn-close btn-sm ms-2" onClick={() => setShowGoogleNotice(false)}></button>
+          </div>
+        )}
+
         {/* Divider */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-          <div style={{ flex: 1, height: 1, background: 'var(--secondary-200)' }} />
-          <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 500 }}>or sign in with email</span>
-          <div style={{ flex: 1, height: 1, background: 'var(--secondary-200)' }} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+          <div style={{ flex: 1, height: 1, background: '#e2e8f0' }} />
+          <span style={{ fontSize: 11, color: '#94a3b8', fontWeight: 500 }}>OR SIGN IN WITH EMAIL</span>
+          <div style={{ flex: 1, height: 1, background: '#e2e8f0' }} />
         </div>
+
+        {/* Info Message */}
+        {infoMsg && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '10px 12px', marginBottom: 16, fontSize: 13, color: '#166534' }}>
+            <FiCheckCircle size={16} className="flex-shrink-0" />
+            <div>{infoMsg}</div>
+          </div>
+        )}
 
         {/* Error Alert */}
         {error && (
-          <motion.div
-            initial={{ opacity: 0, y: -4 }}
-            animate={{ opacity: 1, y: 0 }}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              background: 'var(--danger-10)',
-              border: '1px solid rgba(239,68,68,0.2)',
-              borderRadius: 'var(--radius-md)',
-              padding: '8px 12px',
-              marginBottom: 12,
-              fontSize: 12,
-              color: 'var(--danger)',
-              fontWeight: 500,
-            }}
-          >
-            <FiAlertCircle size={14} style={{ flexShrink: 0 }} /> {error}
-          </motion.div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 12px', marginBottom: 16, fontSize: 13, color: '#991b1b' }}>
+            <FiAlertCircle size={16} className="flex-shrink-0" />
+            <div>{error}</div>
+          </div>
         )}
 
         {/* Form Fields */}
         <form onSubmit={handleSubmit}>
-          <div style={{ marginBottom: 12 }}>
-            <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>
-              Email address
+          <div style={{ marginBottom: 14 }}>
+            <label style={{ fontSize: 12, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 6 }}>
+              Email Address
             </label>
             <div style={{ position: 'relative' }}>
-              <div style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }}>
-                <FiMail size={15} />
+              <div style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }}>
+                <FiMail size={16} />
               </div>
               <input
                 type="email"
-                className="input-custom"
-                placeholder="name@example.com"
+                className="form-control ps-5 py-2"
+                placeholder="you@example.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                style={{ paddingLeft: 38, paddingTop: 8, paddingBottom: 8, fontSize: 13 }}
+                style={{ fontSize: 14 }}
                 required
               />
             </div>
           </div>
 
-          <div style={{ marginBottom: 12 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>Password</label>
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+              <label style={{ fontSize: 12, fontWeight: 600, color: '#475569' }}>Password</label>
               <a
                 href="#forgot"
                 onClick={(e) => {
                   e.preventDefault();
-                  alert('Demo reset password: Enter demo credentials to log in!');
+                  alert('Password reset link feature coming soon!');
                 }}
-                style={{ fontSize: 11, color: 'var(--primary)', fontWeight: 600, textDecoration: 'none' }}
+                style={{ fontSize: 12, color: '#4F46E5', fontWeight: 600, textDecoration: 'none' }}
               >
                 Forgot password?
               </a>
             </div>
             <div style={{ position: 'relative' }}>
-              <div style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }}>
-                <FiLock size={15} />
+              <div style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }}>
+                <FiLock size={16} />
               </div>
               <input
                 type={showPass ? 'text' : 'password'}
-                className="input-custom"
+                className="form-control ps-5 pe-5 py-2"
                 placeholder="••••••••"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                style={{ paddingLeft: 38, paddingRight: 38, paddingTop: 8, paddingBottom: 8, fontSize: 13 }}
+                style={{ fontSize: 14 }}
                 required
               />
               <button
                 type="button"
                 onClick={() => setShowPass((v) => !v)}
-                style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
+                style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8' }}
               >
-                {showPass ? <FiEyeOff size={15} /> : <FiEye size={15} />}
+                {showPass ? <FiEyeOff size={16} /> : <FiEye size={16} />}
               </button>
             </div>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16 }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-secondary)', cursor: 'pointer', userSelect: 'none' }}>
+          <div style={{ display: 'flex', alignItems: 'center', marginBottom: 20 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#475569', cursor: 'pointer' }}>
               <input
                 type="checkbox"
                 checked={remember}
                 onChange={(e) => setRemember(e.target.checked)}
-                style={{ accentColor: 'var(--primary)', width: 14, height: 14 }}
+                className="form-check-input mt-0"
               />
               Remember me
             </label>
@@ -358,20 +304,13 @@ export default function LoginPage() {
 
           <button
             type="submit"
-            className="btn-primary-custom"
+            className="btn btn-primary w-100 py-2 rounded-3 fw-bold"
             disabled={loading}
-            style={{
-              width: '100%',
-              justifyContent: 'center',
-              fontSize: 14,
-              padding: '11px',
-              borderRadius: 'var(--radius-md)',
-              opacity: loading ? 0.7 : 1,
-            }}
+            style={{ background: '#4F46E5', borderColor: '#4F46E5', fontSize: 15 }}
           >
             {loading ? (
-              <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <div className="spinner" style={{ width: 14, height: 14, borderWidth: 2 }} />
+              <span className="d-flex align-items-center justify-content-center gap-2">
+                <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
                 Signing in...
               </span>
             ) : (
@@ -381,10 +320,10 @@ export default function LoginPage() {
         </form>
 
         {/* Footer Link */}
-        <div style={{ textAlign: 'center', fontSize: 12, color: 'var(--text-muted)', marginTop: 16, paddingTop: 10, borderTop: '1px solid var(--secondary-100)' }}>
-          Don't have an account?{' '}
-          <Link to="/register" style={{ color: 'var(--primary)', fontWeight: 700, textDecoration: 'none' }}>
-            Create Account →
+        <div style={{ textAlign: 'center', fontSize: 13, color: '#64748b', marginTop: 20, paddingTop: 14, borderTop: '1px solid #e2e8f0' }}>
+          Need a ShopSphere account?{' '}
+          <Link to="/register" style={{ color: '#4F46E5', fontWeight: 700, textDecoration: 'none' }}>
+            Register Now →
           </Link>
         </div>
       </motion.div>

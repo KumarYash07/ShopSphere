@@ -44,6 +44,10 @@ const storeSchema = new mongoose.Schema(
         type: String,
         trim: true,
       },
+      country: {
+        type: String,
+        trim: true,
+      },
     },
     gstNumber: {
       type: String,

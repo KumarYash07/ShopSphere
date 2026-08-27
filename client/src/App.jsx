@@ -2,25 +2,33 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { CartProvider } from './context/CartContext';
 import { WishlistProvider } from './context/WishlistContext';
-import LoginModal from './components/auth/LoginModal';
-import RegisterModal from './components/auth/RegisterModal';
 
-// Pages
+// Route Guards
+import ProtectedRoute from './components/common/ProtectedRoute';
+import HostRoute from './components/common/HostRoute';
+import AdminRoute from './components/common/AdminRoute';
+
+// Public Pages
 import Home from './pages/Home';
 import Products from './pages/Products';
 import ProductDetail from './pages/ProductDetail';
 import Categories from './pages/Categories';
 import Offers from './pages/Offers';
+import LoginPage from './pages/LoginPage';
+import RegisterPage from './pages/RegisterPage';
+import VerifyEmailPage from './pages/Auth/VerifyEmailPage';
+import NotFound from './pages/NotFound';
+
+// User Protected Pages
 import Cart from './pages/Cart';
 import Wishlist from './pages/Wishlist';
 import Checkout from './pages/Checkout';
 import Orders from './pages/Orders';
 import CustomerDashboard from './pages/CustomerDashboard';
+
+// Host & Admin Dashboards
 import SellerDashboard from './pages/SellerDashboard';
 import AdminDashboard from './pages/AdminDashboard';
-import LoginPage from './pages/LoginPage';
-import RegisterPage from './pages/RegisterPage';
-import NotFound from './pages/NotFound';
 
 export default function App() {
   return (
@@ -28,26 +36,81 @@ export default function App() {
       <AuthProvider>
         <CartProvider>
           <WishlistProvider>
-            {/* Global Auth Modals */}
-            <LoginModal />
-            <RegisterModal />
-
             <Routes>
+              {/* Public Routes */}
               <Route path="/" element={<Home />} />
               <Route path="/login" element={<LoginPage />} />
               <Route path="/register" element={<RegisterPage />} />
+              <Route path="/verify-email" element={<VerifyEmailPage />} />
               <Route path="/products" element={<Products />} />
               <Route path="/products/:id" element={<ProductDetail />} />
               <Route path="/search" element={<Products />} />
               <Route path="/categories" element={<Categories />} />
               <Route path="/offers" element={<Offers />} />
-              <Route path="/cart" element={<Cart />} />
-              <Route path="/wishlist" element={<Wishlist />} />
-              <Route path="/checkout" element={<Checkout />} />
-              <Route path="/orders" element={<Orders />} />
-              <Route path="/dashboard" element={<CustomerDashboard />} />
-              <Route path="/seller" element={<SellerDashboard />} />
-              <Route path="/admin" element={<AdminDashboard />} />
+
+              {/* User Protected Routes */}
+              <Route
+                path="/cart"
+                element={
+                  <ProtectedRoute>
+                    <Cart />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/wishlist"
+                element={
+                  <ProtectedRoute>
+                    <Wishlist />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/checkout"
+                element={
+                  <ProtectedRoute>
+                    <Checkout />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/orders"
+                element={
+                  <ProtectedRoute>
+                    <Orders />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/dashboard"
+                element={
+                  <ProtectedRoute>
+                    <CustomerDashboard />
+                  </ProtectedRoute>
+                }
+              />
+
+              {/* Host / Seller Protected Routes */}
+              <Route
+                path="/seller/*"
+                element={
+                  <HostRoute>
+                    <SellerDashboard />
+                  </HostRoute>
+                }
+              />
+
+              {/* Admin Protected Routes */}
+              <Route
+                path="/admin/*"
+                element={
+                  <AdminRoute>
+                    <AdminDashboard />
+                  </AdminRoute>
+                }
+              />
+
+              {/* 404 Not Found */}
               <Route path="*" element={<NotFound />} />
             </Routes>
           </WishlistProvider>

@@ -7,7 +7,7 @@ import { useAuth } from '../context/AuthContext';
 import { formatPrice } from '../utils/helpers';
 
 export default function Cart() {
-  const { cart, removeFromCart, updateQty, cartTotal, clearCart } = useCart();
+  const { cart, loadingCart, removeFromCart, updateQty, cartTotal, clearCart } = useCart();
   const { user, openLogin } = useAuth();
   const navigate = useNavigate();
 
@@ -24,6 +24,17 @@ export default function Cart() {
           <h3 className="empty-state-title">Please Login to View Cart</h3>
           <p className="empty-state-text">Login to manage your cart and checkout</p>
           <button className="btn-primary-custom" onClick={openLogin}>Login Now</button>
+        </div>
+      </MainLayout>
+    );
+  }
+
+  if (loadingCart) {
+    return (
+      <MainLayout>
+        <div className="text-center py-5" style={{ paddingTop: 100 }}>
+          <div className="spinner-border text-primary" role="status" />
+          <p className="text-muted small mt-2">Loading your cart...</p>
         </div>
       </MainLayout>
     );

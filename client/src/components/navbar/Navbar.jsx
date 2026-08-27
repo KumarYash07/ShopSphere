@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  FiSearch, FiShoppingCart, FiHeart, FiBell, FiUser,
+  FiSearch, FiShoppingCart, FiHeart, FiUser,
   FiChevronDown, FiMenu, FiX, FiLogOut, FiPackage,
   FiSettings, FiGrid, FiTrendingUp, FiTag
 } from 'react-icons/fi';
@@ -10,14 +10,12 @@ import { HiOutlineSparkles } from 'react-icons/hi2';
 import { useAuth } from '../../context/AuthContext';
 import { useCart } from '../../context/CartContext';
 import { useWishlist } from '../../context/WishlistContext';
-import { categories, notifications } from '../../data/dummy';
-import NotificationDropdown from './NotificationDropdown';
-import MegaMenu from './MegaMenu';
+import { getCategoriesApi } from '../../api/categoryApi';
 
 const NAV_LINKS = [
   { label: 'Offers', path: '/offers', icon: <FiTag /> },
-  { label: 'New Arrivals', path: '/products?filter=new', icon: <HiOutlineSparkles /> },
-  { label: 'Trending', path: '/products?filter=trending', icon: <FiTrendingUp /> },
+  { label: 'New Arrivals', path: '/products?sort=newest', icon: <HiOutlineSparkles /> },
+  { label: 'Top Rated', path: '/products?sort=rating', icon: <FiTrendingUp /> },
 ];
 
 export default function Navbar() {
@@ -26,11 +24,11 @@ export default function Navbar() {
   const { wishlistCount } = useWishlist();
   const [scrolled, setScrolled] = useState(false);
   const [query, setQuery] = useState('');
-  const [showNotif, setShowNotif] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [showMega, setShowMega] = useState(false);
   const [showMobile, setShowMobile] = useState(false);
-  const [unread] = useState(notifications.filter(n => !n.read).length);
+  const [categories, setCategories] = useState([]);
+
   const navigate = useNavigate();
   const location = useLocation();
   const searchRef = useRef(null);
@@ -43,29 +41,48 @@ export default function Navbar() {
 
   useEffect(() => {
     setShowMobile(false);
-    setShowNotif(false);
     setShowProfile(false);
     setShowMega(false);
   }, [location]);
 
+  useEffect(() => {
+    const fetchCategories = async () => {
+      try {
+        const data = await getCategoriesApi();
+        if (data.success && data.categories) {
+          setCategories(data.categories);
+        }
+      } catch (err) {
+        console.error('Failed to load categories for nav:', err);
+      }
+    };
+    fetchCategories();
+  }, []);
+
   const handleSearch = (e) => {
     e.preventDefault();
-    if (query.trim()) navigate(`/search?q=${encodeURIComponent(query.trim())}`);
+    if (query.trim()) {
+      navigate(`/products?search=${encodeURIComponent(query.trim())}`);
+    }
   };
 
   const getDashboardPath = () => {
-    if (!user) return '/';
+    if (!user) return '/login';
     if (user.role === 'admin') return '/admin';
-    if (user.role === 'seller') return '/seller';
+    if (user.role === 'host') return '/seller';
     return '/dashboard';
   };
+
+  const userName = user ? (user.firstName ? `${user.firstName} ${user.lastName || ''}`.trim() : user.name || user.email) : '';
+  const userRole = user?.role || 'user';
+  const userAvatar = user?.profileImage || `https://ui-avatars.com/api/?name=${encodeURIComponent(userName)}&background=4F46E5&color=fff`;
 
   return (
     <>
       {/* Announcement Bar */}
-      <div className="announcement-bar">
-        <span>🎉 Independence Day Sale — Up to 70% Off! &nbsp;
-          <Link to="/offers">Shop Now →</Link>
+      <div className="announcement-bar bg-dark text-white text-center py-2 px-3 small fw-medium" style={{ background: 'linear-gradient(90deg, #1e1b4b 0%, #312e81 100%)' }}>
+        <span>🎉 Festival Shopping Season — Save Up to 70% Off on Top Categories! &nbsp;
+          <Link to="/offers" className="text-warning fw-bold text-decoration-none">Shop Sale →</Link>
         </span>
       </div>
 
@@ -75,74 +92,99 @@ export default function Navbar() {
         style={{
           position: 'sticky',
           top: 0,
-          zIndex: 'var(--z-sticky)',
-          background: scrolled ? 'rgba(255,255,255,0.95)' : 'white',
+          zIndex: 1020,
+          background: scrolled ? 'rgba(255,255,255,0.96)' : 'white',
           backdropFilter: scrolled ? 'blur(12px)' : 'none',
-          borderBottom: '1px solid var(--secondary-200)',
-          boxShadow: scrolled ? 'var(--shadow-md)' : 'none',
+          borderBottom: '1px solid #e2e8f0',
+          boxShadow: scrolled ? '0 4px 20px rgba(0,0,0,0.06)' : 'none',
           transition: 'all 0.3s ease',
         }}
       >
         <div className="container-fluid px-3 px-lg-4">
-          <div className="d-flex align-items-center" style={{ height: 'var(--navbar-height)', gap: 16 }}>
+          <div className="d-flex align-items-center" style={{ height: '70px', gap: 16 }}>
             
-            {/* ── Logo ── */}
+            {/* Logo */}
             <Link to="/" className="d-flex align-items-center text-decoration-none flex-shrink-0" style={{ gap: 8 }}>
               <div style={{
-                width: 36, height: 36,
-                background: 'linear-gradient(135deg, var(--primary) 0%, #7C3AED 100%)',
+                width: 38, height: 38,
+                background: 'linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%)',
                 borderRadius: 10,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                color: 'white', fontWeight: 900, fontSize: 18,
-                boxShadow: 'var(--shadow-primary)',
+                color: 'white', fontWeight: 900, fontSize: 20,
+                boxShadow: '0 4px 12px rgba(79,70,229,0.3)',
               }}>S</div>
               <div>
-                <div style={{ fontSize: 18, fontWeight: 900, color: 'var(--secondary-900)', lineHeight: 1 }}>
-                  Shop<span style={{ color: 'var(--primary)' }}>Sphere</span>
+                <div style={{ fontSize: 20, fontWeight: 900, color: '#0f172a', lineHeight: 1 }}>
+                  Shop<span style={{ color: '#4F46E5' }}>Sphere</span>
                 </div>
-                <div style={{ fontSize: 9, color: 'var(--text-muted)', letterSpacing: '0.1em', textTransform: 'uppercase', lineHeight: 1 }}>
-                  Multi-Vendor
+                <div style={{ fontSize: 9, color: '#64748b', letterSpacing: '0.12em', textTransform: 'uppercase', lineHeight: 1, marginTop: 2 }}>
+                  Marketplace
                 </div>
               </div>
             </Link>
 
-            {/* ── Categories Dropdown (desktop) ── */}
+            {/* Categories Dropdown (desktop) */}
             <div className="d-none d-lg-flex position-relative" style={{ flexShrink: 0 }}>
               <button
-                className="btn-ghost d-flex align-items-center"
-                style={{ gap: 6, fontSize: 14, fontWeight: 600 }}
+                className="btn btn-light d-flex align-items-center border-0 px-3 py-2 rounded-3"
+                style={{ gap: 6, fontSize: 14, fontWeight: 600, color: '#334155' }}
                 onMouseEnter={() => setShowMega(true)}
                 onMouseLeave={() => setShowMega(false)}
                 onClick={() => setShowMega(v => !v)}
               >
                 <FiGrid size={16} /> Categories <FiChevronDown size={14} style={{ transition: 'transform 0.2s', transform: showMega ? 'rotate(180deg)' : 'rotate(0)' }} />
               </button>
+              
               <AnimatePresence>
                 {showMega && (
-                  <div onMouseEnter={() => setShowMega(true)} onMouseLeave={() => setShowMega(false)}>
-                    <MegaMenu categories={categories} />
-                  </div>
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 10 }}
+                    onMouseEnter={() => setShowMega(true)}
+                    onMouseLeave={() => setShowMega(false)}
+                    style={{
+                      position: 'absolute', top: '100%', left: 0,
+                      background: 'white', border: '1px solid #e2e8f0',
+                      borderRadius: 12, boxShadow: '0 10px 30px rgba(0,0,0,0.12)',
+                      padding: 16, minWidth: 260, zIndex: 1050,
+                    }}
+                  >
+                    <div className="fw-bold text-uppercase small text-muted mb-2 px-2">Browse Categories</div>
+                    {categories.length === 0 ? (
+                      <div className="text-muted small px-2">No categories available</div>
+                    ) : (
+                      categories.map(cat => (
+                        <Link
+                          key={cat._id}
+                          to={`/products?category=${cat._id}`}
+                          className="d-flex align-items-center justify-content-between text-decoration-none text-dark py-2 px-3 rounded-2 dropdown-item-custom"
+                          style={{ transition: 'background 0.2s' }}
+                        >
+                          <span className="fw-medium" style={{ fontSize: 14 }}>{cat.name}</span>
+                          <span className="badge bg-light text-muted rounded-pill" style={{ fontSize: 10 }}>View</span>
+                        </Link>
+                      ))
+                    )}
+                  </motion.div>
                 )}
               </AnimatePresence>
             </div>
 
-            {/* ── Search Bar ── */}
-            <form onSubmit={handleSearch} className="d-none d-md-flex flex-grow-1" style={{ maxWidth: 600 }}>
+            {/* Search Bar */}
+            <form onSubmit={handleSearch} className="d-none d-md-flex flex-grow-1" style={{ maxWidth: 580 }}>
               <div style={{ position: 'relative', width: '100%' }}>
                 <input
                   ref={searchRef}
-                  className="input-custom"
+                  className="form-control rounded-pill pe-5 ps-4 py-2"
                   type="text"
-                  placeholder="Search products, brands, categories..."
+                  placeholder="Search products, brands and categories..."
                   value={query}
                   onChange={e => setQuery(e.target.value)}
                   style={{
-                    paddingLeft: 20,
-                    paddingRight: 52,
-                    borderRadius: 'var(--radius-full)',
                     height: 44,
                     fontSize: 14,
-                    border: '2px solid var(--secondary-200)',
+                    borderColor: '#cbd5e1',
                     boxShadow: 'none',
                   }}
                 />
@@ -151,8 +193,8 @@ export default function Navbar() {
                   style={{
                     position: 'absolute', right: 4, top: 4,
                     width: 36, height: 36,
-                    background: 'var(--primary)',
-                    border: 'none', borderRadius: 'var(--radius-full)',
+                    background: '#4F46E5',
+                    border: 'none', borderRadius: '50%',
                     color: 'white', cursor: 'pointer',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     transition: 'background 0.2s',
@@ -163,21 +205,19 @@ export default function Navbar() {
               </div>
             </form>
 
-            {/* ── Nav Links (desktop) ── */}
+            {/* Nav Links (desktop) */}
             <div className="d-none d-xl-flex align-items-center" style={{ gap: 4, flexShrink: 0 }}>
               {NAV_LINKS.map(link => (
                 <Link
                   key={link.path}
                   to={link.path}
-                  className="d-flex align-items-center"
+                  className="d-flex align-items-center text-decoration-none px-3 py-2 rounded-3"
                   style={{
-                    gap: 5, padding: '6px 12px',
-                    borderRadius: 'var(--radius-md)',
-                    fontSize: 13, fontWeight: 600,
-                    color: location.pathname === link.path ? 'var(--primary)' : 'var(--text-secondary)',
-                    background: location.pathname === link.path ? 'var(--primary-10)' : 'transparent',
+                    gap: 6,
+                    fontSize: 14, fontWeight: 600,
+                    color: location.pathname === link.path ? '#4F46E5' : '#475569',
+                    background: location.pathname === link.path ? '#eef2ff' : 'transparent',
                     transition: 'all 0.2s',
-                    textDecoration: 'none',
                   }}
                 >
                   {link.icon} {link.label}
@@ -185,62 +225,44 @@ export default function Navbar() {
               ))}
             </div>
 
-            {/* ── Right Icons ── */}
-            <div className="d-flex align-items-center ms-auto" style={{ gap: 4, flexShrink: 0 }}>
+            {/* Right Action Icons */}
+            <div className="d-flex align-items-center ms-auto" style={{ gap: 8, flexShrink: 0 }}>
               
               {/* Wishlist */}
-              <Link to="/wishlist" style={{ position: 'relative', padding: 8, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <FiHeart size={22} style={{ color: 'var(--text-secondary)', transition: 'color 0.2s' }} />
+              <Link to="/wishlist" className="position-relative p-2 text-decoration-none text-secondary">
+                <FiHeart size={22} />
                 {wishlistCount > 0 && (
-                  <span className="notif-dot" style={{ top: 2, right: 2 }}>{wishlistCount}</span>
+                  <span className="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style={{ fontSize: 10 }}>
+                    {wishlistCount}
+                  </span>
                 )}
               </Link>
 
               {/* Cart */}
-              <Link to="/cart" style={{ position: 'relative', padding: 8, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <FiShoppingCart size={22} style={{ color: 'var(--text-secondary)' }} />
+              <Link to="/cart" className="position-relative p-2 text-decoration-none text-secondary">
+                <FiShoppingCart size={22} />
                 {cartCount > 0 && (
-                  <span className="notif-dot" style={{ top: 2, right: 2 }}>{cartCount > 9 ? '9+' : cartCount}</span>
+                  <span className="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-primary" style={{ fontSize: 10 }}>
+                    {cartCount > 9 ? '9+' : cartCount}
+                  </span>
                 )}
               </Link>
 
-              {/* Notifications (only when logged in) */}
-              {user && (
-                <div style={{ position: 'relative' }}>
-                  <button
-                    style={{ padding: 8, background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}
-                    onClick={() => { setShowNotif(v => !v); setShowProfile(false); }}
-                  >
-                    <FiBell size={22} style={{ color: 'var(--text-secondary)' }} />
-                    {unread > 0 && <span className="notif-dot" style={{ top: 2, right: 2 }}>{unread}</span>}
-                  </button>
-                  <AnimatePresence>
-                    {showNotif && <NotificationDropdown onClose={() => setShowNotif(false)} />}
-                  </AnimatePresence>
-                </div>
-              )}
-
-              {/* Profile / Login */}
+              {/* Profile / Auth */}
               {user ? (
                 <div style={{ position: 'relative' }}>
                   <button
-                    onClick={() => { setShowProfile(v => !v); setShowNotif(false); }}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 8,
-                      background: 'var(--secondary-100)',
-                      border: '2px solid var(--secondary-200)',
-                      borderRadius: 'var(--radius-full)',
-                      padding: '4px 12px 4px 4px',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s',
-                    }}
+                    onClick={() => setShowProfile(v => !v)}
+                    className="btn btn-light d-flex align-items-center gap-2 rounded-pill px-3 py-1 border"
+                    style={{ background: '#f8fafc' }}
                   >
-                    <img src={user.avatar} alt={user.name} style={{ width: 30, height: 30, borderRadius: '50%', objectFit: 'cover' }} />
-                    <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', maxWidth: 90, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {user.name.split(' ')[0]}
+                    <img src={userAvatar} alt={userName} style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover' }} />
+                    <span className="fw-semibold text-dark text-truncate" style={{ fontSize: 13, maxWidth: 100 }}>
+                      {userName.split(' ')[0]}
                     </span>
-                    <FiChevronDown size={12} style={{ color: 'var(--text-muted)', transition: 'transform 0.2s', transform: showProfile ? 'rotate(180deg)' : 'rotate(0)' }} />
+                    <FiChevronDown size={12} className="text-muted" style={{ transition: 'transform 0.2s', transform: showProfile ? 'rotate(180deg)' : 'rotate(0)' }} />
                   </button>
+
                   <AnimatePresence>
                     {showProfile && (
                       <motion.div
@@ -250,28 +272,32 @@ export default function Navbar() {
                         transition={{ duration: 0.15 }}
                         style={{
                           position: 'absolute', right: 0, top: 'calc(100% + 8px)',
-                          background: 'white', borderRadius: 'var(--radius-lg)',
-                          boxShadow: 'var(--shadow-xl)', border: '1px solid var(--secondary-200)',
-                          minWidth: 220, padding: 8, zIndex: 1000,
+                          background: 'white', borderRadius: 12,
+                          boxShadow: '0 10px 30px rgba(0,0,0,0.15)', border: '1px solid #e2e8f0',
+                          minWidth: 220, padding: 8, zIndex: 1050,
                         }}
                       >
-                        <div style={{ padding: '8px 12px 12px', borderBottom: '1px solid var(--secondary-100)', marginBottom: 8 }}>
-                          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>{user.name}</div>
-                          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{user.email}</div>
-                          <span className={`badge-${user.role === 'admin' ? 'danger' : user.role === 'seller' ? 'accent' : 'primary'}`} style={{ marginTop: 6, display: 'inline-block', textTransform: 'capitalize' }}>{user.role}</span>
+                        <div className="p-3 border-bottom mb-2">
+                          <div className="fw-bold text-dark text-truncate">{userName}</div>
+                          <div className="small text-muted text-truncate">{user.email}</div>
+                          <span className={`badge ${userRole === 'admin' ? 'bg-danger' : userRole === 'host' ? 'bg-warning text-dark' : 'bg-indigo'} mt-2 text-capitalize`}>
+                            {userRole === 'host' ? 'Seller / Host' : userRole}
+                          </span>
                         </div>
-                        <Link to={getDashboardPath()} className="sidebar-link" style={{ borderRadius: 8 }} onClick={() => setShowProfile(false)}>
-                          <FiGrid className="icon" /> Dashboard
+
+                        <Link to={getDashboardPath()} className="d-flex align-items-center gap-2 p-2 text-decoration-none text-dark rounded-2 hover-bg-light" onClick={() => setShowProfile(false)}>
+                          <FiGrid className="text-primary" /> Dashboard
                         </Link>
-                        <Link to="/orders" className="sidebar-link" style={{ borderRadius: 8 }} onClick={() => setShowProfile(false)}>
-                          <FiPackage className="icon" /> My Orders
+                        <Link to="/dashboard?tab=orders" className="d-flex align-items-center gap-2 p-2 text-decoration-none text-dark rounded-2 hover-bg-light" onClick={() => setShowProfile(false)}>
+                          <FiPackage className="text-primary" /> My Orders
                         </Link>
-                        <Link to="/dashboard?tab=settings" className="sidebar-link" style={{ borderRadius: 8 }} onClick={() => setShowProfile(false)}>
-                          <FiSettings className="icon" /> Settings
+                        <Link to="/dashboard?tab=profile" className="d-flex align-items-center gap-2 p-2 text-decoration-none text-dark rounded-2 hover-bg-light" onClick={() => setShowProfile(false)}>
+                          <FiSettings className="text-primary" /> Profile Settings
                         </Link>
-                        <div style={{ borderTop: '1px solid var(--secondary-100)', marginTop: 8, paddingTop: 8 }}>
-                          <button className="sidebar-link" style={{ borderRadius: 8, color: 'var(--danger)', width: '100%' }} onClick={() => { logout(); setShowProfile(false); }}>
-                            <FiLogOut className="icon" /> Sign Out
+
+                        <div className="border-top mt-2 pt-2">
+                          <button className="w-100 d-flex align-items-center gap-2 p-2 btn btn-link text-danger text-decoration-none border-0" onClick={() => { logout(); setShowProfile(false); }}>
+                            <FiLogOut /> Sign Out
                           </button>
                         </div>
                       </motion.div>
@@ -279,26 +305,22 @@ export default function Navbar() {
                   </AnimatePresence>
                 </div>
               ) : (
-                <div className="d-flex" style={{ gap: 8 }}>
-                  <Link to="/login" className="btn-ghost d-none d-sm-flex text-decoration-none" style={{ fontSize: 13, padding: '8px 16px' }}>
+                <div className="d-flex align-items-center gap-2">
+                  <Link to="/login" className="btn btn-outline-primary btn-sm px-3 rounded-pill fw-semibold">
                     Login
                   </Link>
-                  <Link to="/register" className="btn-primary-custom d-none d-sm-flex text-decoration-none" style={{ fontSize: 13, padding: '8px 20px' }}>
-                    Sign Up
-                  </Link>
-                  <Link to="/login" className="d-sm-none" style={{ padding: 8, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <FiUser size={22} style={{ color: 'var(--text-secondary)' }} />
+                  <Link to="/register" className="btn btn-primary btn-sm px-3 rounded-pill fw-semibold" style={{ background: '#4F46E5', borderColor: '#4F46E5' }}>
+                    Register
                   </Link>
                 </div>
               )}
 
               {/* Mobile Menu Toggle */}
               <button
-                className="d-md-none"
-                style={{ padding: 8, background: 'none', border: 'none', cursor: 'pointer', marginLeft: 4 }}
+                className="btn btn-link d-md-none text-dark p-1 ms-1"
                 onClick={() => setShowMobile(v => !v)}
               >
-                {showMobile ? <FiX size={24} style={{ color: 'var(--text-primary)' }} /> : <FiMenu size={24} style={{ color: 'var(--text-primary)' }} />}
+                {showMobile ? <FiX size={24} /> : <FiMenu size={24} />}
               </button>
             </div>
           </div>
@@ -307,47 +329,49 @@ export default function Navbar() {
           <div className="d-md-none pb-2">
             <form onSubmit={handleSearch} style={{ position: 'relative' }}>
               <input
-                className="input-custom"
+                className="form-control rounded-pill pe-5 ps-3 py-2"
                 type="text"
                 placeholder="Search products..."
                 value={query}
                 onChange={e => setQuery(e.target.value)}
-                style={{ paddingLeft: 16, paddingRight: 48, borderRadius: 'var(--radius-full)', height: 40, fontSize: 14 }}
+                style={{ fontSize: 14 }}
               />
-              <button type="submit" style={{ position: 'absolute', right: 4, top: 4, width: 32, height: 32, background: 'var(--primary)', border: 'none', borderRadius: 'var(--radius-full)', color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <button type="submit" style={{ position: 'absolute', right: 4, top: 4, width: 32, height: 32, background: '#4F46E5', border: 'none', borderRadius: '50%', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <FiSearch size={14} />
               </button>
             </form>
           </div>
         </div>
 
-        {/* Mobile Menu */}
+        {/* Mobile Menu Dropdown */}
         <AnimatePresence>
           {showMobile && (
             <motion.div
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
               exit={{ opacity: 0, height: 0 }}
-              style={{ background: 'white', borderTop: '1px solid var(--secondary-200)', overflow: 'hidden' }}
+              className="bg-white border-top overflow-hidden"
             >
-              <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <div className="p-3 d-flex flex-column gap-2">
                 {NAV_LINKS.map(link => (
-                  <Link key={link.path} to={link.path} className="sidebar-link" style={{ borderRadius: 8 }}>
+                  <Link key={link.path} to={link.path} className="d-flex align-items-center gap-2 p-2 text-decoration-none text-dark rounded-2" onClick={() => setShowMobile(false)}>
                     {link.icon} {link.label}
                   </Link>
                 ))}
-                <div style={{ borderTop: '1px solid var(--secondary-100)', marginTop: 8, paddingTop: 8 }}>
-                  <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', padding: '0 16px 8px', margin: 0 }}>Categories</p>
-                  {categories.slice(0, 6).map(cat => (
-                    <Link key={cat.id} to={`/products?category=${cat.name}`} className="sidebar-link" style={{ borderRadius: 8 }}>
-                      <span>{cat.icon}</span> {cat.name}
+                
+                <div className="border-top pt-2 mt-2">
+                  <div className="fw-bold text-uppercase small text-muted px-2 mb-1">Categories</div>
+                  {categories.slice(0, 5).map(cat => (
+                    <Link key={cat._id} to={`/products?category=${cat._id}`} className="d-block p-2 text-decoration-none text-dark rounded-2" onClick={() => setShowMobile(false)}>
+                      {cat.name}
                     </Link>
                   ))}
                 </div>
+
                 {!user && (
-                  <div style={{ display: 'flex', gap: 8, padding: '12px 0 0' }}>
-                    <Link to="/login" className="btn-outline-custom flex-grow-1 justify-content-center text-decoration-none" style={{ fontSize: 14 }} onClick={() => setShowMobile(false)}>Login</Link>
-                    <Link to="/register" className="btn-primary-custom flex-grow-1 justify-content-center text-decoration-none" style={{ fontSize: 14 }} onClick={() => setShowMobile(false)}>Sign Up</Link>
+                  <div className="d-flex gap-2 pt-3 border-top mt-2">
+                    <Link to="/login" className="btn btn-outline-primary w-50" onClick={() => setShowMobile(false)}>Login</Link>
+                    <Link to="/register" className="btn btn-primary w-50" style={{ background: '#4F46E5' }} onClick={() => setShowMobile(false)}>Register</Link>
                   </div>
                 )}
               </div>

@@ -1,270 +1,698 @@
-import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { useState, useEffect } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
-  FiGrid, FiPackage, FiHeart, FiMapPin, FiBell, FiUser,
-  FiSettings, FiLogOut, FiEdit2, FiCamera, FiPhone, FiMail
+  FiGrid, FiPackage, FiHeart, FiMapPin, FiUser,
+  FiSettings, FiLogOut, FiShoppingCart, FiPlus,
+  FiTrash2, FiEdit, FiCheckCircle, FiX, FiAlertCircle
 } from 'react-icons/fi';
-import MainLayout from '../components/layout/MainLayout';
+import Navbar from '../components/navbar/Navbar';
+import Footer from '../components/footer/Footer';
 import { useAuth } from '../context/AuthContext';
+import { useCart } from '../context/CartContext';
 import { useWishlist } from '../context/WishlistContext';
-import { orders, addresses } from '../data/dummy';
-import { formatPrice, getStatusColor } from '../utils/helpers';
-
-const SIDEBAR_ITEMS = [
-  { id: 'dashboard', label: 'Dashboard', icon: FiGrid },
-  { id: 'orders', label: 'Orders', icon: FiPackage },
-  { id: 'wishlist', label: 'Wishlist', icon: FiHeart },
-  { id: 'addresses', label: 'Addresses', icon: FiMapPin },
-  { id: 'notifications', label: 'Notifications', icon: FiBell },
-  { id: 'profile', label: 'Profile', icon: FiUser },
-  { id: 'settings', label: 'Settings', icon: FiSettings },
-];
+import ProductCard from '../components/product/ProductCard';
+import {
+  getAddressesApi,
+  addAddressApi,
+  updateAddressApi,
+  deleteAddressApi,
+  setDefaultAddressApi
+} from '../api/addressApi';
+import { getMyOrdersApi } from '../api/orderApi';
 
 export default function CustomerDashboard() {
   const { user, logout } = useAuth();
+  const { cart } = useCart();
   const { wishlist } = useWishlist();
-  const navigate = useNavigate();
-  const [active, setActive] = useState('dashboard');
+  const [searchParams] = useSearchParams();
 
-  if (!user || user.role !== 'customer') {
-    return (
-      <MainLayout>
-        <div className="empty-state" style={{ paddingTop: 80 }}>
-          <span className="empty-state-icon">🔐</span>
-          <h3 className="empty-state-title">Access Denied</h3>
-          <Link to="/" className="btn-primary-custom" style={{ display: 'inline-flex' }}>Go Home</Link>
-        </div>
-      </MainLayout>
-    );
-  }
+  const initialTab = searchParams.get('tab') || 'profile';
+  const [activeTab, setActiveTab] = useState(initialTab);
 
-  const stats = [
-    { label: 'Total Orders', value: orders.length, icon: '📦', color: 'var(--primary)', bg: 'var(--primary-10)' },
-    { label: 'Wishlisted', value: wishlist.length, icon: '❤️', color: 'var(--danger)', bg: 'var(--danger-10)' },
-    { label: 'Addresses', value: addresses.length, icon: '📍', color: 'var(--success)', bg: 'var(--success-10)' },
-    { label: 'Reviews Given', value: 3, icon: '⭐', color: '#F59E0B', bg: 'var(--warning-10)' },
-  ];
+  // Address Book State
+  const [addresses, setAddresses] = useState([]);
+  const [loadingAddresses, setLoadingAddresses] = useState(false);
+  const [showAddressModal, setShowAddressModal] = useState(false);
+  const [editingAddress, setEditingAddress] = useState(null);
+  const [savingAddress, setSavingAddress] = useState(false);
+  const [feedback, setFeedback] = useState({ type: '', message: '' });
 
-  const renderContent = () => {
-    switch (active) {
-      case 'dashboard': return <DashboardOverview stats={stats} />;
-      case 'orders': return <OrdersTab />;
-      case 'wishlist': return <WishlistTab wishlist={wishlist} />;
-      case 'addresses': return <AddressesTab />;
-      case 'profile': return <ProfileTab user={user} />;
-      default: return <ComingSoon tab={active} />;
+  // Order History State
+  const [ordersList, setOrdersList] = useState([]);
+  const [loadingOrdersList, setLoadingOrdersList] = useState(false);
+
+  const [addressForm, setAddressForm] = useState({
+    fullName: '',
+    phone: '',
+    addressLine1: '',
+    addressLine2: '',
+    city: '',
+    state: '',
+    pincode: '',
+    landmark: '',
+    addressType: 'home',
+    isDefault: false,
+  });
+
+  const showToast = (type, message) => {
+    setFeedback({ type, message });
+    setTimeout(() => setFeedback({ type: '', message: '' }), 4000);
+  };
+
+  const fetchAddresses = async () => {
+    setLoadingAddresses(true);
+    try {
+      const data = await getAddressesApi();
+      if (data.success && Array.isArray(data.addresses)) {
+        setAddresses(data.addresses);
+      }
+    } catch (err) {
+      console.error('Failed to load addresses:', err);
+    } finally {
+      setLoadingAddresses(false);
     }
   };
 
+  const fetchOrdersList = async () => {
+    setLoadingOrdersList(true);
+    try {
+      const data = await getMyOrdersApi();
+      if (data.success && Array.isArray(data.orders)) {
+        setOrdersList(data.orders);
+      }
+    } catch (err) {
+      console.error('Failed to load orders list:', err);
+    } finally {
+      setLoadingOrdersList(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'addresses') {
+      fetchAddresses();
+    } else if (activeTab === 'orders') {
+      fetchOrdersList();
+    }
+  }, [activeTab]);
+
+  const handleOpenAddModal = () => {
+    setEditingAddress(null);
+    setAddressForm({
+      fullName: user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() : '',
+      phone: user?.phone || '',
+      addressLine1: '',
+      addressLine2: '',
+      city: '',
+      state: '',
+      pincode: '',
+      landmark: '',
+      addressType: 'home',
+      isDefault: addresses.length === 0,
+    });
+    setShowAddressModal(true);
+  };
+
+  const handleOpenEditModal = (addr) => {
+    setEditingAddress(addr);
+    setAddressForm({
+      fullName: addr.fullName || '',
+      phone: addr.phone || '',
+      addressLine1: addr.addressLine1 || '',
+      addressLine2: addr.addressLine2 || '',
+      city: addr.city || '',
+      state: addr.state || '',
+      pincode: addr.pincode || '',
+      landmark: addr.landmark || '',
+      addressType: addr.addressType || 'home',
+      isDefault: addr.isDefault || false,
+    });
+    setShowAddressModal(true);
+  };
+
+  const handleSaveAddress = async (e) => {
+    e.preventDefault();
+    if (!addressForm.fullName || !addressForm.phone || !addressForm.addressLine1 || !addressForm.city || !addressForm.state || !addressForm.pincode) {
+      showToast('danger', 'Please fill in all required address fields.');
+      return;
+    }
+    setSavingAddress(true);
+    try {
+      if (editingAddress) {
+        const data = await updateAddressApi(editingAddress._id, addressForm);
+        if (data.success) {
+          showToast('success', 'Address updated successfully!');
+        }
+      } else {
+        const data = await addAddressApi(addressForm);
+        if (data.success) {
+          showToast('success', 'Address added successfully!');
+        }
+      }
+      setShowAddressModal(false);
+      fetchAddresses();
+    } catch (err) {
+      showToast('danger', err.response?.data?.message || 'Failed to save address.');
+    } finally {
+      setSavingAddress(false);
+    }
+  };
+
+  const handleDeleteAddress = async (id) => {
+    try {
+      const data = await deleteAddressApi(id);
+      if (data.success) {
+        showToast('success', 'Address deleted successfully.');
+        fetchAddresses();
+      }
+    } catch (err) {
+      showToast('danger', err.response?.data?.message || 'Failed to delete address.');
+    }
+  };
+
+  const handleSetDefaultAddress = async (id) => {
+    try {
+      const data = await setDefaultAddressApi(id);
+      if (data.success) {
+        showToast('success', 'Default address updated.');
+        fetchAddresses();
+      }
+    } catch (err) {
+      showToast('danger', err.response?.data?.message || 'Failed to set default address.');
+    }
+  };
+
+  const userName = user ? (user.firstName ? `${user.firstName} ${user.lastName || ''}`.trim() : user.name || user.email) : '';
+  const userAvatar = user?.profileImage || `https://ui-avatars.com/api/?name=${encodeURIComponent(userName)}&background=4F46E5&color=fff`;
+
   return (
-    <MainLayout>
-      <div style={{ padding: '32px 24px', maxWidth: 1200, margin: '0 auto' }}>
-        <div className="row g-4">
-          {/* Sidebar */}
-          <div className="col-12 col-lg-3">
-            <div className="card-premium" style={{ padding: 24, position: 'sticky', top: 'calc(var(--navbar-height) + 16px)' }}>
-              {/* Profile Card */}
-              <div style={{ textAlign: 'center', marginBottom: 24, paddingBottom: 24, borderBottom: '1px solid var(--secondary-200)' }}>
-                <div style={{ position: 'relative', display: 'inline-block', marginBottom: 12 }}>
-                  <img src={user.avatar} alt={user.name} style={{ width: 72, height: 72, borderRadius: '50%', objectFit: 'cover', border: '3px solid var(--primary)' }} />
-                  <button style={{ position: 'absolute', bottom: 0, right: 0, width: 24, height: 24, borderRadius: '50%', background: 'var(--primary)', border: '2px solid white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <FiCamera size={11} style={{ color: 'white' }} />
+    <>
+      <Navbar />
+      <div className="bg-light min-vh-100 py-4">
+        <div className="container">
+          
+          {/* Feedback Banner */}
+          {feedback.message && (
+            <div className={`alert alert-${feedback.type} alert-dismissible fade show d-flex align-items-center gap-2 mb-4`} role="alert">
+              <FiAlertCircle />
+              <div>{feedback.message}</div>
+              <button type="button" className="btn-close" onClick={() => setFeedback({ type: '', message: '' })} />
+            </div>
+          )}
+
+          {/* User Header */}
+          <div className="bg-white rounded-4 p-4 shadow-sm mb-4 border">
+            <div className="d-flex align-items-center gap-3">
+              <img
+                src={userAvatar}
+                alt={userName}
+                className="rounded-circle object-fit-cover border border-3 border-primary"
+                style={{ width: 64, height: 64 }}
+              />
+              <div>
+                <h3 className="fw-bold text-dark mb-0">{userName}</h3>
+                <p className="text-muted small mb-1">{user?.email}</p>
+                <span className="badge bg-primary-subtle text-primary fw-bold text-capitalize" style={{ background: '#eef2ff', color: '#4F46E5' }}>
+                  Customer Account
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="row g-4">
+            {/* Sidebar Navigation */}
+            <div className="col-12 col-md-3">
+              <div className="card border-0 shadow-sm rounded-4 p-3 bg-white">
+                <div className="nav nav-pills flex-column gap-2">
+                  {[
+                    { id: 'profile', label: 'My Profile', icon: FiUser },
+                    { id: 'orders', label: 'My Orders', icon: FiPackage },
+                    { id: 'cart', label: 'My Cart', icon: FiShoppingCart },
+                    { id: 'wishlist', label: 'My Wishlist', icon: FiHeart },
+                    { id: 'addresses', label: 'Saved Addresses', icon: FiMapPin },
+                    { id: 'settings', label: 'Settings', icon: FiSettings },
+                  ].map(tab => {
+                    const Icon = tab.icon;
+                    return (
+                      <button
+                        key={tab.id}
+                        className={`nav-link text-start fw-semibold d-flex align-items-center gap-2 rounded-3 ${activeTab === tab.id ? 'active bg-primary' : 'text-dark'}`}
+                        style={activeTab === tab.id ? { background: '#4F46E5' } : {}}
+                        onClick={() => setActiveTab(tab.id)}
+                      >
+                        <Icon size={16} /> {tab.label}
+                      </button>
+                    );
+                  })}
+
+                  <div className="border-top pt-2 mt-2">
+                    <button
+                      className="btn btn-link text-danger w-100 text-start text-decoration-none fw-semibold d-flex align-items-center gap-2 p-2"
+                      onClick={logout}
+                    >
+                      <FiLogOut /> Sign Out
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Main Content Pane */}
+            <div className="col-12 col-md-9">
+              {/* TAB: PROFILE */}
+              {activeTab === 'profile' && (
+                <div className="card border-0 shadow-sm rounded-4 p-4 bg-white">
+                  <h4 className="fw-bold text-dark mb-4">Account Profile</h4>
+                  <div className="row g-3">
+                    <div className="col-md-6">
+                      <label className="form-label text-muted small fw-semibold">First Name</label>
+                      <input type="text" className="form-control" value={user?.firstName || ''} readOnly />
+                    </div>
+                    <div className="col-md-6">
+                      <label className="form-label text-muted small fw-semibold">Last Name</label>
+                      <input type="text" className="form-control" value={user?.lastName || ''} readOnly />
+                    </div>
+                    <div className="col-md-6">
+                      <label className="form-label text-muted small fw-semibold">Email Address</label>
+                      <input type="email" className="form-control" value={user?.email || ''} readOnly />
+                    </div>
+                    <div className="col-md-6">
+                      <label className="form-label text-muted small fw-semibold">Phone Number</label>
+                      <input type="tel" className="form-control" value={user?.phone || 'Not provided'} readOnly />
+                    </div>
+                    <div className="col-md-6">
+                      <label className="form-label text-muted small fw-semibold">Email Verified</label>
+                      <div>
+                        <span className={`badge ${user?.isEmailVerified ? 'bg-success' : 'bg-warning text-dark'}`}>
+                          {user?.isEmailVerified ? '✓ Verified' : 'Pending Verification'}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="col-md-6">
+                      <label className="form-label text-muted small fw-semibold">Account Status</label>
+                      <div>
+                        <span className="badge bg-info text-dark text-capitalize">
+                          {user?.status || 'Active'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* TAB: WISHLIST */}
+              {activeTab === 'wishlist' && (
+                <div className="card border-0 shadow-sm rounded-4 p-4 bg-white">
+                  <h4 className="fw-bold text-dark mb-4">My Wishlist ({wishlist.length})</h4>
+                  {wishlist.length === 0 ? (
+                    <div className="text-center py-5">
+                      <div className="display-4 text-muted mb-2">❤️</div>
+                      <h5 className="fw-bold text-dark">Your Wishlist is Empty</h5>
+                      <p className="text-muted small">Save items you love to view them later.</p>
+                      <Link to="/products" className="btn btn-primary rounded-pill btn-sm fw-bold" style={{ background: '#4F46E5' }}>
+                        Browse Catalog
+                      </Link>
+                    </div>
+                  ) : (
+                    <div className="row g-3">
+                      {wishlist.map((product) => (
+                        <div key={product._id || product.id} className="col-6 col-md-4">
+                          <ProductCard product={product} />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* TAB: CART */}
+              {activeTab === 'cart' && (
+                <div className="card border-0 shadow-sm rounded-4 p-4 bg-white">
+                  <h4 className="fw-bold text-dark mb-4">My Cart ({cart.length})</h4>
+                  {cart.length === 0 ? (
+                    <div className="text-center py-5">
+                      <div className="display-4 text-muted mb-2">🛒</div>
+                      <h5 className="fw-bold text-dark">Your Cart is Empty</h5>
+                      <Link to="/products" className="btn btn-primary rounded-pill btn-sm fw-bold mt-2" style={{ background: '#4F46E5' }}>
+                        Start Shopping
+                      </Link>
+                    </div>
+                  ) : (
+                    <div>
+                      <div className="list-group list-group-flush mb-4">
+                        {cart.map((item) => (
+                          <div key={item._id || item.id} className="list-group-item d-flex align-items-center justify-content-between py-3">
+                            <div className="d-flex align-items-center gap-3">
+                              <img src={item.images?.[0] || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=100'} alt="" className="rounded-3" style={{ width: 50, height: 50, objectFit: 'cover' }} />
+                              <div>
+                                <h6 className="fw-semibold mb-0">{item.name}</h6>
+                                <span className="small text-muted">Qty: {item.qty}</span>
+                              </div>
+                            </div>
+                            <div className="fw-bold text-primary">
+                              ₹{(Number(item.finalPrice ?? item.price) * item.qty).toLocaleString()}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      <Link to="/checkout" className="btn btn-primary rounded-pill fw-bold px-4" style={{ background: '#4F46E5' }}>
+                        Proceed to Checkout →
+                      </Link>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* TAB: ORDERS */}
+              {activeTab === 'orders' && (
+                <div className="card border-0 shadow-sm rounded-4 p-4 bg-white">
+                  <div className="d-flex align-items-center justify-content-between mb-4">
+                    <div>
+                      <h4 className="fw-bold text-dark mb-1">My Orders ({ordersList.length})</h4>
+                      <p className="small text-muted mb-0">Track and view details of your recent purchases.</p>
+                    </div>
+                  </div>
+
+                  {loadingOrdersList ? (
+                    <div className="text-center py-5">
+                      <div className="spinner-border text-primary" role="status" />
+                      <p className="text-muted small mt-2">Loading order history...</p>
+                    </div>
+                  ) : ordersList.length === 0 ? (
+                    <div className="text-center py-5 bg-light rounded-4">
+                      <div className="display-4 text-muted mb-2">📦</div>
+                      <h5 className="fw-bold text-dark">No Orders Found</h5>
+                      <p className="text-muted small">You haven't placed any orders yet.</p>
+                      <Link to="/products" className="btn btn-primary rounded-pill btn-sm fw-bold mt-2" style={{ background: '#4F46E5' }}>
+                        Browse Marketplace
+                      </Link>
+                    </div>
+                  ) : (
+                    <div className="d-flex flex-column gap-3">
+                      {ordersList.map((ord) => (
+                        <div key={ord._id} className="card border rounded-4 p-3 bg-white">
+                          <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 pb-2 mb-3 border-bottom">
+                            <div>
+                              <span className="fw-bold text-dark me-2">{ord.orderNumber}</span>
+                              <span className="small text-muted">
+                                ({ord.createdAt ? new Date(ord.createdAt).toLocaleDateString() : ''})
+                              </span>
+                            </div>
+                            <div className="d-flex align-items-center gap-2">
+                              <span className={`badge ${ord.orderStatus === 'confirmed' || ord.orderStatus === 'delivered' ? 'bg-success' : ord.orderStatus === 'cancelled' ? 'bg-danger' : 'bg-warning text-dark'} text-capitalize`}>
+                                {ord.orderStatus}
+                              </span>
+                              <span className="fw-bold text-primary">₹{ord.totalAmount?.toLocaleString()}</span>
+                            </div>
+                          </div>
+
+                          <div className="mb-2">
+                            {ord.items?.map((item, i) => (
+                              <div key={i} className="d-flex align-items-center justify-content-between py-1">
+                                <div className="d-flex align-items-center gap-2">
+                                  <img
+                                    src={item.productImage || item.product?.images?.[0] || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=80'}
+                                    alt=""
+                                    className="rounded-2"
+                                    style={{ width: 40, height: 40, objectFit: 'cover' }}
+                                  />
+                                  <span className="small fw-semibold">{item.productName} (x{item.quantity})</span>
+                                </div>
+                                <span className="small text-muted">₹{(item.price * item.quantity).toLocaleString()}</span>
+                              </div>
+                            ))}
+                          </div>
+
+                          {ord.shippingAddress && (
+                            <div className="small text-muted pt-2 border-top">
+                              📍 <strong>Ship to:</strong> {ord.shippingAddress.fullName}, {ord.shippingAddress.city} - {ord.shippingAddress.pincode}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* TAB: SAVED ADDRESSES */}
+              {activeTab === 'addresses' && (
+                <div className="card border-0 shadow-sm rounded-4 p-4 bg-white">
+                  <div className="d-flex align-items-center justify-content-between mb-4">
+                    <div>
+                      <h4 className="fw-bold text-dark mb-1">Saved Addresses ({addresses.length})</h4>
+                      <p className="small text-muted mb-0">Manage your delivery addresses for seamless checkout.</p>
+                    </div>
+                    <button
+                      className="btn btn-primary rounded-pill btn-sm fw-bold d-flex align-items-center gap-1 px-3"
+                      style={{ background: '#4F46E5' }}
+                      onClick={handleOpenAddModal}
+                    >
+                      <FiPlus size={16} /> + Add New Address
+                    </button>
+                  </div>
+
+                  {loadingAddresses ? (
+                    <div className="text-center py-5">
+                      <div className="spinner-border text-primary" role="status" />
+                      <p className="text-muted small mt-2">Loading addresses...</p>
+                    </div>
+                  ) : addresses.length === 0 ? (
+                    <div className="text-center py-5 bg-light rounded-4">
+                      <div className="display-4 text-muted mb-2">📍</div>
+                      <h5 className="fw-bold text-dark">No Saved Addresses Found</h5>
+                      <p className="text-muted small">Add your delivery address to enjoy fast, one-click checkout.</p>
+                      <button
+                        className="btn btn-primary rounded-pill btn-sm fw-bold mt-2"
+                        style={{ background: '#4F46E5' }}
+                        onClick={handleOpenAddModal}
+                      >
+                        + Add First Address
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="row g-3">
+                      {addresses.map((addr) => (
+                        <div key={addr._id} className="col-12 col-md-6">
+                          <div className={`card h-100 rounded-4 border p-3 ${addr.isDefault ? 'border-primary bg-light' : 'bg-white'}`}>
+                            <div className="d-flex align-items-center justify-content-between mb-2">
+                              <div className="d-flex align-items-center gap-2">
+                                <span className="fw-bold text-dark">{addr.fullName}</span>
+                                <span className="badge bg-secondary text-capitalize small" style={{ fontSize: 10 }}>{addr.addressType}</span>
+                              </div>
+                              {addr.isDefault ? (
+                                <span className="badge bg-success d-flex align-items-center gap-1">
+                                  <FiCheckCircle size={10} /> Default
+                                </span>
+                              ) : (
+                                <button
+                                  className="btn btn-link btn-sm p-0 text-muted text-decoration-none small"
+                                  onClick={() => handleSetDefaultAddress(addr._id)}
+                                >
+                                  Make Default
+                                </button>
+                              )}
+                            </div>
+
+                            <p className="small text-secondary mb-2" style={{ lineHeight: 1.5 }}>
+                              {addr.addressLine1}
+                              {addr.addressLine2 ? `, ${addr.addressLine2}` : ''}<br />
+                              {addr.landmark ? `Landmark: ${addr.landmark}, ` : ''}
+                              {addr.city}, {addr.state} - <strong>{addr.pincode}</strong>
+                            </p>
+
+                            <div className="small text-muted mb-3">📞 {addr.phone}</div>
+
+                            <div className="d-flex align-items-center justify-content-end gap-2 border-top pt-2 mt-auto">
+                              <button
+                                className="btn btn-sm btn-outline-primary rounded-pill px-3 d-flex align-items-center gap-1"
+                                onClick={() => handleOpenEditModal(addr)}
+                              >
+                                <FiEdit size={12} /> Edit
+                              </button>
+                              <button
+                                className="btn btn-sm btn-outline-danger rounded-pill px-3 d-flex align-items-center gap-1"
+                                onClick={() => handleDeleteAddress(addr._id)}
+                              >
+                                <FiTrash2 size={12} /> Delete
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* TAB: SETTINGS */}
+              {activeTab === 'settings' && (
+                <div className="card border-0 shadow-sm rounded-4 p-4 bg-white">
+                  <h4 className="fw-bold text-dark mb-4">Account Settings</h4>
+                  <p className="text-muted small">Update password and notification preferences.</p>
+                  <div className="alert alert-info small">
+                    Password update feature coming soon.
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      {/* Add / Edit Address Modal */}
+      {showAddressModal && (
+        <div className="modal fade show d-block" tabIndex="-1" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <div className="modal-dialog modal-dialog-centered modal-lg">
+            <div className="modal-content rounded-4 border-0 shadow">
+              <div className="modal-header border-bottom-0 pb-0">
+                <h5 className="modal-title fw-bold text-dark">
+                  {editingAddress ? 'Edit Delivery Address' : 'Add New Delivery Address'}
+                </h5>
+                <button type="button" className="btn-close" onClick={() => setShowAddressModal(false)} />
+              </div>
+              <form onSubmit={handleSaveAddress}>
+                <div className="modal-body p-4">
+                  <div className="row g-3">
+                    <div className="col-md-6">
+                      <label className="form-label fw-semibold small">Full Name *</label>
+                      <input
+                        type="text"
+                        className="form-control"
+                        placeholder="e.g. Yash Kumar"
+                        value={addressForm.fullName}
+                        onChange={(e) => setAddressForm({ ...addressForm, fullName: e.target.value })}
+                        required
+                      />
+                    </div>
+
+                    <div className="col-md-6">
+                      <label className="form-label fw-semibold small">Mobile Phone Number *</label>
+                      <input
+                        type="tel"
+                        className="form-control"
+                        placeholder="e.g. 9876543210"
+                        value={addressForm.phone}
+                        onChange={(e) => setAddressForm({ ...addressForm, phone: e.target.value })}
+                        required
+                      />
+                    </div>
+
+                    <div className="col-12">
+                      <label className="form-label fw-semibold small">Address Line 1 (Flat, House no., Building, Street) *</label>
+                      <input
+                        type="text"
+                        className="form-control"
+                        placeholder="e.g. Flat 402, Sunshine Apartments, MG Road"
+                        value={addressForm.addressLine1}
+                        onChange={(e) => setAddressForm({ ...addressForm, addressLine1: e.target.value })}
+                        required
+                      />
+                    </div>
+
+                    <div className="col-12">
+                      <label className="form-label fw-semibold small">Address Line 2 (Area, Colony, Sector)</label>
+                      <input
+                        type="text"
+                        className="form-control"
+                        placeholder="e.g. Indiranagar, Stage 2"
+                        value={addressForm.addressLine2}
+                        onChange={(e) => setAddressForm({ ...addressForm, addressLine2: e.target.value })}
+                      />
+                    </div>
+
+                    <div className="col-md-4">
+                      <label className="form-label fw-semibold small">City *</label>
+                      <input
+                        type="text"
+                        className="form-control"
+                        placeholder="e.g. Bengaluru"
+                        value={addressForm.city}
+                        onChange={(e) => setAddressForm({ ...addressForm, city: e.target.value })}
+                        required
+                      />
+                    </div>
+
+                    <div className="col-md-4">
+                      <label className="form-label fw-semibold small">State *</label>
+                      <input
+                        type="text"
+                        className="form-control"
+                        placeholder="e.g. Karnataka"
+                        value={addressForm.state}
+                        onChange={(e) => setAddressForm({ ...addressForm, state: e.target.value })}
+                        required
+                      />
+                    </div>
+
+                    <div className="col-md-4">
+                      <label className="form-label fw-semibold small">Pincode *</label>
+                      <input
+                        type="text"
+                        className="form-control"
+                        placeholder="e.g. 560001"
+                        value={addressForm.pincode}
+                        onChange={(e) => setAddressForm({ ...addressForm, pincode: e.target.value })}
+                        required
+                      />
+                    </div>
+
+                    <div className="col-md-6">
+                      <label className="form-label fw-semibold small">Landmark (Optional)</label>
+                      <input
+                        type="text"
+                        className="form-control"
+                        placeholder="e.g. Near Metro Station"
+                        value={addressForm.landmark}
+                        onChange={(e) => setAddressForm({ ...addressForm, landmark: e.target.value })}
+                      />
+                    </div>
+
+                    <div className="col-md-6">
+                      <label className="form-label fw-semibold small">Address Type</label>
+                      <select
+                        className="form-select"
+                        value={addressForm.addressType}
+                        onChange={(e) => setAddressForm({ ...addressForm, addressType: e.target.value })}
+                      >
+                        <option value="home">Home (All Day Delivery)</option>
+                        <option value="work">Work (Delivery between 9 AM - 6 PM)</option>
+                        <option value="other">Other</option>
+                      </select>
+                    </div>
+
+                    <div className="col-12">
+                      <div className="form-check">
+                        <input
+                          type="checkbox"
+                          className="form-check-input"
+                          id="isDefaultCheck"
+                          checked={addressForm.isDefault}
+                          onChange={(e) => setAddressForm({ ...addressForm, isDefault: e.target.checked })}
+                        />
+                        <label className="form-check-label small text-dark fw-semibold" htmlFor="isDefaultCheck">
+                          Set as default delivery address
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="modal-footer border-top-0 pt-0">
+                  <button type="button" className="btn btn-light rounded-pill px-4" onClick={() => setShowAddressModal(false)}>
+                    Cancel
+                  </button>
+                  <button type="submit" className="btn btn-primary rounded-pill px-4 fw-bold" style={{ background: '#4F46E5' }} disabled={savingAddress}>
+                    {savingAddress ? 'Saving...' : editingAddress ? 'Save Changes' : 'Save Address'}
                   </button>
                 </div>
-                <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--text-primary)', marginBottom: 4 }}>{user.name}</div>
-                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>{user.email}</div>
-                <span className="badge-primary" style={{ fontSize: 11 }}>Customer</span>
-              </div>
-
-              {/* Nav */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                {SIDEBAR_ITEMS.map(({ id, label, icon: Icon }) => (
-                  <button
-                    key={id}
-                    className={`sidebar-link ${active === id ? 'active' : ''}`}
-                    onClick={() => setActive(id)}
-                  >
-                    <Icon className="icon" /> {label}
-                  </button>
-                ))}
-                <div style={{ borderTop: '1px solid var(--secondary-100)', marginTop: 8, paddingTop: 8 }}>
-                  <button className="sidebar-link" style={{ color: 'var(--danger)' }} onClick={() => { logout(); navigate('/'); }}>
-                    <FiLogOut className="icon" /> Sign Out
-                  </button>
-                </div>
-              </div>
+              </form>
             </div>
-          </div>
-
-          {/* Content */}
-          <div className="col-12 col-lg-9">
-            <motion.div key={active} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
-              {renderContent()}
-            </motion.div>
           </div>
         </div>
-      </div>
-    </MainLayout>
-  );
-}
+      )}
 
-function DashboardOverview({ stats }) {
-  return (
-    <div>
-      <h2 style={{ fontWeight: 800, fontSize: 24, marginBottom: 24 }}>My Dashboard</h2>
-      <div className="row g-3 mb-4">
-        {stats.map((s, i) => (
-          <div key={s.label} className="col-6 col-md-3">
-            <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: i * 0.08 }} className="stat-card" style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 32, marginBottom: 8 }}>{s.icon}</div>
-              <div style={{ fontSize: 28, fontWeight: 900, color: s.color }}>{s.value}</div>
-              <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>{s.label}</div>
-            </motion.div>
-          </div>
-        ))}
-      </div>
-      <div>
-        <h5 style={{ fontWeight: 700, marginBottom: 16 }}>Recent Orders</h5>
-        <OrdersTab compact />
-      </div>
-    </div>
-  );
-}
-
-function OrdersTab({ compact = false }) {
-  return (
-    <div>
-      {!compact && <h2 style={{ fontWeight: 800, fontSize: 24, marginBottom: 24 }}>My Orders</h2>}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        {orders.map(order => (
-          <div key={order.id} className="card-premium" style={{ padding: 16, display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
-            <img src={order.items[0].image} alt="" style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 'var(--radius-md)', flexShrink: 0 }} />
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontWeight: 700, fontSize: 13 }}>{order.id}</div>
-              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{order.items[0].name}</div>
-              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{order.date}</div>
-            </div>
-            <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--primary)', marginBottom: 4 }}>{formatPrice(order.total)}</div>
-              <span className={`badge-${getStatusColor(order.status)}`} style={{ textTransform: 'capitalize', fontSize: 11 }}>{order.status}</span>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function WishlistTab({ wishlist }) {
-  if (!wishlist.length) return (
-    <div className="empty-state">
-      <span className="empty-state-icon">❤️</span>
-      <h3 className="empty-state-title">No wishlisted items</h3>
-      <Link to="/products" className="btn-primary-custom" style={{ display: 'inline-flex' }}>Browse Products</Link>
-    </div>
-  );
-  return (
-    <div>
-      <h2 style={{ fontWeight: 800, fontSize: 24, marginBottom: 24 }}>My Wishlist</h2>
-      <div className="product-grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))' }}>
-        {wishlist.map(p => (
-          <Link key={p.id} to={`/products/${p.id}`} className="card-premium" style={{ overflow: 'hidden', textDecoration: 'none' }}>
-            <img src={p.images[0]} alt={p.name} style={{ width: '100%', aspectRatio: '1/1', objectFit: 'cover' }} />
-            <div style={{ padding: 12 }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
-              <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--primary)' }}>{formatPrice(p.price)}</div>
-            </div>
-          </Link>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function AddressesTab() {
-  return (
-    <div>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
-        <h2 style={{ fontWeight: 800, fontSize: 24, margin: 0 }}>My Addresses</h2>
-        <button className="btn-primary-custom" style={{ fontSize: 13, padding: '8px 20px' }}>+ Add New</button>
-      </div>
-      <div className="row g-3">
-        {addresses.map(addr => (
-          <div key={addr.id} className="col-12 col-md-6">
-            <div className="address-card">
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <span className={`badge-${addr.type === 'Home' ? 'primary' : 'accent'}`}>{addr.type}</span>
-                  {addr.isDefault && <span className="badge-success">Default</span>}
-                </div>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <button style={{ fontSize: 12, color: 'var(--primary)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Edit</button>
-                  {!addr.isDefault && <button style={{ fontSize: 12, color: 'var(--danger)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Delete</button>}
-                </div>
-              </div>
-              <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 6 }}>{addr.name}</div>
-              <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: '0 0 4px', lineHeight: 1.5 }}>{addr.line1}</p>
-              <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: '0 0 4px' }}>{addr.city}, {addr.state} - {addr.pin}</p>
-              <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: 0 }}>📞 {addr.phone}</p>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function ProfileTab({ user }) {
-  return (
-    <div>
-      <h2 style={{ fontWeight: 800, fontSize: 24, marginBottom: 24 }}>My Profile</h2>
-      <div className="card-premium" style={{ padding: 32 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 24, marginBottom: 32, flexWrap: 'wrap' }}>
-          <div style={{ position: 'relative' }}>
-            <img src={user.avatar} alt={user.name} style={{ width: 96, height: 96, borderRadius: '50%', objectFit: 'cover', border: '4px solid var(--primary-20)' }} />
-            <button style={{ position: 'absolute', bottom: 4, right: 4, width: 28, height: 28, borderRadius: '50%', background: 'var(--primary)', border: '2px solid white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <FiCamera size={12} style={{ color: 'white' }} />
-            </button>
-          </div>
-          <div>
-            <h3 style={{ fontWeight: 800, fontSize: 20, margin: 0 }}>{user.name}</h3>
-            <p style={{ color: 'var(--text-muted)', margin: '4px 0 12px' }}>Customer Account</p>
-            <button className="btn-outline-custom" style={{ fontSize: 12, padding: '7px 16px', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-              <FiEdit2 size={12} /> Edit Photo
-            </button>
-          </div>
-        </div>
-        <div className="row g-3">
-          {[
-            { label: 'Full Name', value: user.name, icon: FiUser },
-            { label: 'Email', value: user.email, icon: FiMail },
-            { label: 'Phone', value: user.phone || '9876543210', icon: FiPhone },
-          ].map(({ label, value, icon: Icon }) => (
-            <div key={label} className="col-12 col-md-6">
-              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6, display: 'block' }}>{label}</label>
-              <div style={{ position: 'relative' }}>
-                <div style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }}><Icon size={15} /></div>
-                <input className="input-custom" defaultValue={value} style={{ paddingLeft: 42 }} />
-              </div>
-            </div>
-          ))}
-        </div>
-        <div style={{ marginTop: 24, display: 'flex', gap: 12 }}>
-          <button className="btn-primary-custom" style={{ padding: '11px 24px', fontSize: 14 }}>Save Changes</button>
-          <button className="btn-ghost" style={{ padding: '11px 24px', fontSize: 14 }}>Cancel</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ComingSoon({ tab }) {
-  return (
-    <div className="empty-state">
-      <span className="empty-state-icon">🚧</span>
-      <h3 className="empty-state-title" style={{ textTransform: 'capitalize' }}>{tab}</h3>
-      <p className="empty-state-text">This section is coming soon.</p>
-    </div>
+      <Footer />
+    </>
   );
 }

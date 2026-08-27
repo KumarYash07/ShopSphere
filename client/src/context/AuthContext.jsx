@@ -1,48 +1,142 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { loginApi, registerApi, verifyEmailApi, getProfileApi } from '../api/authApi';
 
 const AuthContext = createContext(null);
 
-const DUMMY_USERS = {
-  customer: { id: 'u1', name: 'Yash Kumar', email: 'customer@demo.com', password: 'demo123', role: 'customer', avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=80&q=80', phone: '9876543210' },
-  seller: { id: 's1', name: 'iStore Official', email: 'seller@demo.com', password: 'demo123', role: 'seller', avatar: 'https://images.unsplash.com/photo-1611532736597-de2d4265fba3?w=80&q=80', storeName: 'iStore Official', phone: '9988776655' },
-  admin: { id: 'a1', name: 'Admin User', email: 'admin@demo.com', password: 'demo123', role: 'admin', avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=80&q=80', phone: '9000000000' },
-};
-
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('ss_user')) || null; } catch { return null; }
+    try {
+      return JSON.parse(localStorage.getItem('ss_user')) || null;
+    } catch {
+      return null;
+    }
   });
+
+  const [token, setToken] = useState(() => localStorage.getItem('ss_token') || null);
+  const [loading, setLoading] = useState(true);
+  const [authError, setAuthError] = useState(null);
+
   const [showLogin, setShowLogin] = useState(false);
   const [showRegister, setShowRegister] = useState(false);
 
+  const logout = useCallback(() => {
+    localStorage.removeItem('ss_token');
+    localStorage.removeItem('ss_user');
+    setToken(null);
+    setUser(null);
+    setAuthError(null);
+  }, []);
+
+  // Fetch current user profile if token exists on mount
   useEffect(() => {
-    if (user) localStorage.setItem('ss_user', JSON.stringify(user));
-    else localStorage.removeItem('ss_user');
-  }, [user]);
+    const initAuth = async () => {
+      const storedToken = localStorage.getItem('ss_token');
+      if (storedToken) {
+        try {
+          const data = await getProfileApi();
+          if (data.success && data.user) {
+            setUser(data.user);
+            localStorage.setItem('ss_user', JSON.stringify(data.user));
+          }
+        } catch (err) {
+          console.error('Failed to verify session profile:', err);
+          logout();
+        }
+      }
+      setLoading(false);
+    };
 
-  const login = (email, password) => {
-    const found = Object.values(DUMMY_USERS).find(u => u.email === email && u.password === password);
-    if (found) { setUser(found); return { success: true, user: found }; }
-    return { success: false, error: 'Invalid email or password' };
+    initAuth();
+  }, [logout]);
+
+  // Listen to 401 unauthorized events from Axios interceptor
+  useEffect(() => {
+    const handleUnauthorized = (e) => {
+      setAuthError(e.detail || 'Session expired. Please log in again.');
+      logout();
+    };
+
+    window.addEventListener('auth:unauthorized', handleUnauthorized);
+    return () => window.removeEventListener('auth:unauthorized', handleUnauthorized);
+  }, [logout]);
+
+  const login = async (email, password) => {
+    setAuthError(null);
+    try {
+      const data = await loginApi({ email, password });
+      if (data.success && data.token) {
+        localStorage.setItem('ss_token', data.token);
+        localStorage.setItem('ss_user', JSON.stringify(data.user));
+        setToken(data.token);
+        setUser(data.user);
+        closeAuth();
+        return { success: true, user: data.user, token: data.token, message: data.message };
+      }
+      return { success: false, error: data.message || 'Login failed' };
+    } catch (err) {
+      const message = err.response?.data?.message || 'Login failed. Please check your credentials.';
+      setAuthError(message);
+      return { success: false, error: message };
+    }
   };
 
-  const register = (data) => {
-    const newUser = { id: `u_${Date.now()}`, ...data, role: data.role || 'customer', avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=80&q=80' };
-    setUser(newUser);
-    return { success: true, user: newUser };
+  const register = async (formData) => {
+    setAuthError(null);
+    try {
+      const data = await registerApi(formData);
+      if (data.success) {
+        return { success: true, email: data.email, userId: data.userId, message: data.message };
+      }
+      return { success: false, error: data.message || 'Registration failed' };
+    } catch (err) {
+      const message = err.response?.data?.message || 'Registration failed. Please try again.';
+      setAuthError(message);
+      return { success: false, error: message };
+    }
   };
 
-  const logout = () => { setUser(null); };
+  const verifyEmail = async (email, otp) => {
+    setAuthError(null);
+    try {
+      const data = await verifyEmailApi({ email, otp });
+      if (data.success) {
+        return { success: true, user: data.user, message: data.message };
+      }
+      return { success: false, error: data.message || 'Verification failed' };
+    } catch (err) {
+      const message = err.response?.data?.message || 'Invalid or expired OTP. Please try again.';
+      setAuthError(message);
+      return { success: false, error: message };
+    }
+  };
 
   const openLogin = () => { setShowLogin(true); setShowRegister(false); };
   const openRegister = () => { setShowRegister(true); setShowLogin(false); };
   const closeAuth = () => { setShowLogin(false); setShowRegister(false); };
 
-  return (
-    <AuthContext.Provider value={{ user, login, register, logout, showLogin, showRegister, openLogin, openRegister, closeAuth, isAuthenticated: !!user }}>
-      {children}
-    </AuthContext.Provider>
-  );
+  const value = {
+    user,
+    token,
+    loading,
+    authError,
+    setAuthError,
+    isAuthenticated: !!token && !!user,
+    role: user?.role || null,
+    isHost: user?.role === 'host',
+    isAdmin: user?.role === 'admin',
+    isUser: user?.role === 'user',
+    login,
+    register,
+    verifyEmail,
+    logout,
+    showLogin,
+    showRegister,
+    openLogin,
+    openRegister,
+    closeAuth,
+  };
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export const useAuth = () => {

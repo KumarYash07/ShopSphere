@@ -1,399 +1,1533 @@
-import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { useState, useEffect } from 'react';
 import {
   FiGrid, FiUsers, FiShoppingBag, FiPackage, FiTag, FiDollarSign,
-  FiBarChart2, FiSettings, FiLogOut, FiSliders, FiBell, FiImage,
-  FiZap, FiCreditCard, FiArrowUp, FiArrowDown
+  FiEdit, FiAlertCircle, FiCheckCircle, FiXCircle, FiClock, FiCheck, FiX, FiRefreshCw, FiEye,
+  FiHome, FiSlash, FiAlertTriangle
 } from 'react-icons/fi';
-import MainLayout from '../components/layout/MainLayout';
+import Navbar from '../components/navbar/Navbar';
+import Footer from '../components/footer/Footer';
 import { useAuth } from '../context/AuthContext';
-import { adminDashboardStats, products, sellers } from '../data/dummy';
-import { formatPrice, formatCompact } from '../utils/helpers';
-
-const SIDEBAR = [
-  { id: 'dashboard', label: 'Dashboard', icon: FiGrid },
-  { id: 'users', label: 'Users', icon: FiUsers },
-  { id: 'hosts', label: 'Hosts / Sellers', icon: FiShoppingBag },
-  { id: 'products', label: 'Products', icon: FiPackage },
-  { id: 'categories', label: 'Categories', icon: FiTag },
-  { id: 'orders', label: 'Orders', icon: FiPackage },
-  { id: 'payments', label: 'Payments', icon: FiCreditCard },
-  { id: 'wallet', label: 'Wallet', icon: FiDollarSign },
-  { id: 'coupons', label: 'Coupons', icon: FiTag },
-  { id: 'analytics', label: 'Analytics', icon: FiBarChart2 },
-  { id: 'homepage', label: 'Homepage Manager', icon: FiSliders },
-  { id: 'banners', label: 'Banner Manager', icon: FiImage },
-  { id: 'flash-sales', label: 'Flash Sales', icon: FiZap },
-  { id: 'notifications', label: 'Notifications', icon: FiBell },
-  { id: 'settings', label: 'Settings', icon: FiSettings },
-];
+import { getCategoriesApi, createCategoryApi, updateCategoryApi } from '../api/categoryApi';
+import {
+  getPendingHostsApi, updateHostStatusApi, getAdminStatsApi, getAllHostsApi, getHostDetailsApi,
+  getAllStoresApi, getStoreDetailsApi, updateStoreStatusApi,
+  getAllProductsForAdminApi, getAdminProductDetailsApi, updateProductStatusByAdminApi
+} from '../api/adminApi';
+import { formatPrice } from '../utils/helpers';
 
 export default function AdminDashboard() {
-  const { user, logout } = useAuth();
-  const navigate = useNavigate();
-  const [active, setActive] = useState('dashboard');
-  const stats = adminDashboardStats;
+  const { user } = useAuth();
+  const [activeTab, setActiveTab] = useState('overview');
 
-  if (!user || user.role !== 'admin') {
-    return (
-      <MainLayout>
-        <div className="empty-state" style={{ paddingTop: 80 }}>
-          <span className="empty-state-icon">🔐</span>
-          <h3 className="empty-state-title">Admin Access Required</h3>
-          <p className="empty-state-text">Login with admin@demo.com / demo123</p>
-          <Link to="/" className="btn-primary-custom" style={{ display: 'inline-flex' }}>Go Home</Link>
-        </div>
-      </MainLayout>
-    );
-  }
+  // Categories CRUD State
+  const [categories, setCategories] = useState([]);
+  const [loadingCategories, setLoadingCategories] = useState(true);
+  const [categoryForm, setCategoryForm] = useState({ name: '', description: '', image: '', status: 'active' });
+  const [editingCategory, setEditingCategory] = useState(null);
 
-  const STAT_CARDS = [
-    { label: 'Total Users', value: formatCompact(stats.totalUsers), sub: `${formatCompact(stats.activeUsers)} active`, icon: '👥', color: 'var(--primary)' },
-    { label: 'Total Sellers', value: stats.totalHosts.toLocaleString(), sub: '98 new this month', icon: '🏪', color: 'var(--purple)' },
-    { label: 'Total Products', value: formatCompact(stats.totalProducts), sub: '1,240 added today', icon: '🏷️', color: 'var(--accent)' },
-    { label: 'Total Orders', value: formatCompact(stats.totalOrders), sub: '+2,847 today', icon: '📦', color: 'var(--info)' },
-    { label: 'Total Revenue', value: `₹${formatCompact(stats.revenue)}`, sub: '+18% this month', icon: '💰', color: 'var(--success)' },
-    { label: 'Platform Earnings', value: `₹${formatCompact(stats.platformEarnings)}`, sub: '10% commission', icon: '🏦', color: '#F59E0B' },
-    { label: 'Pending Settlements', value: stats.pendingSettlements.toLocaleString(), sub: '₹4.2Cr pending', icon: '⏳', color: 'var(--danger)' },
-    { label: 'Active Users Today', value: formatCompact(stats.activeUsers), sub: '+12% vs yesterday', icon: '📊', color: 'var(--secondary)' },
-  ];
+  // Products State
+  const [products, setProducts] = useState([]);
+  const [productFilter, setProductFilter] = useState('all'); // 'all' | 'active' | 'inactive' | 'out_of_stock'
+  const [selectedProduct, setSelectedProduct] = useState(null);
+  const [loadingProducts, setLoadingProducts] = useState(true);
+  const [loadingProductDetails, setLoadingProductDetails] = useState(false);
+  const [productActionLoadingId, setProductActionLoadingId] = useState(null);
 
-  const renderContent = () => {
-    switch (active) {
-      case 'dashboard': return <AdminDashboardHome stats={STAT_CARDS} salesData={stats.salesData} />;
-      case 'users': return <UsersTab />;
-      case 'hosts': return <HostsTab />;
-      case 'products': return <ProductsTab />;
-      case 'analytics': return <AnalyticsTab data={stats.salesData} />;
-      case 'banners': return <BannersTab />;
-      default: return <ComingSoon tab={active} />;
+  // Host Management State
+  const [pendingHosts, setPendingHosts] = useState([]);
+  const [allHosts, setAllHosts] = useState([]);
+  const [hostFilter, setHostFilter] = useState('all'); // 'all' | 'pending' | 'active' | 'blocked'
+  const [selectedHost, setSelectedHost] = useState(null);
+  const [loadingHosts, setLoadingHosts] = useState(true);
+  const [loadingHostDetails, setLoadingHostDetails] = useState(false);
+  const [actionLoadingId, setActionLoadingId] = useState(null);
+
+  // Admin Stats State
+  const [stats, setStats] = useState(null);
+  const [loadingStats, setLoadingStats] = useState(true);
+
+  // Store Management State
+  const [stores, setStores] = useState([]);
+  const [storeFilter, setStoreFilter] = useState('all'); // 'all' | 'active' | 'suspended' | 'closed'
+  const [selectedStore, setSelectedStore] = useState(null);
+  const [loadingStores, setLoadingStores] = useState(true);
+  const [loadingStoreDetails, setLoadingStoreDetails] = useState(false);
+  const [storeActionLoadingId, setStoreActionLoadingId] = useState(null);
+
+  // Feedback Toast
+  const [feedback, setFeedback] = useState({ type: '', message: '' });
+
+  const showToast = (type, message) => {
+    setFeedback({ type, message });
+    setTimeout(() => setFeedback({ type: '', message: '' }), 4000);
+  };
+
+  // Load Categories from Backend API
+  const fetchCategories = async () => {
+    setLoadingCategories(true);
+    try {
+      const data = await getCategoriesApi();
+      if (data.success && data.categories) {
+        setCategories(prev => {
+          // Merge fetched categories with existing state to preserve any inactive ones toggled in UI
+          const fetchedIds = new Set(data.categories.map(c => c._id));
+          const preservedInactive = prev.filter(c => !fetchedIds.has(c._id) && c.status === 'inactive');
+          return [...data.categories, ...preservedInactive];
+        });
+      }
+    } catch (err) {
+      console.error('Failed to load categories:', err);
+    } finally {
+      setLoadingCategories(false);
+    }
+  };
+
+  // Load Products via Admin Endpoint
+  const fetchProducts = async () => {
+    setLoadingProducts(true);
+    try {
+      const data = await getAllProductsForAdminApi();
+      if (data.success && data.products) {
+        setProducts(data.products);
+      }
+    } catch (err) {
+      console.error('Failed to load products:', err);
+      showToast('danger', err.response?.data?.message || 'Failed to fetch admin product catalog.');
+    } finally {
+      setLoadingProducts(false);
+    }
+  };
+
+  // Fetch Product Details for Admin Inspection
+  const handleViewProductDetails = async (productId) => {
+    setLoadingProductDetails(true);
+    try {
+      const data = await getAdminProductDetailsApi(productId);
+      if (data.success && data.product) {
+        setSelectedProduct(data.product);
+      }
+    } catch (err) {
+      console.error('Failed to fetch product details:', err);
+      showToast('danger', err.response?.data?.message || 'Failed to load product details.');
+    } finally {
+      setLoadingProductDetails(false);
+    }
+  };
+
+  // Handle Admin Product Status Toggle ('active' or 'inactive')
+  const handleProductStatusChange = async (targetProductId, status) => {
+    if (!targetProductId) return;
+    setProductActionLoadingId(targetProductId);
+    try {
+      const data = await updateProductStatusByAdminApi(targetProductId, status);
+      if (data.success) {
+        const updatedStatus = data.product?.status || status;
+        showToast(
+          updatedStatus === 'active' ? 'success' : 'warning',
+          data.message || `Product status updated to ${updatedStatus}.`
+        );
+        // Update local product state
+        setProducts(prev => prev.map(p => (p._id === targetProductId ? { ...p, status: updatedStatus } : p)));
+        // Update modal state if open
+        if (selectedProduct && selectedProduct._id === targetProductId) {
+          setSelectedProduct(prev => prev ? { ...prev, status: updatedStatus } : null);
+        }
+        // Refresh product list and stats
+        fetchProducts();
+        fetchAdminStats();
+      }
+    } catch (err) {
+      showToast('danger', err.response?.data?.message || 'Failed to update product status.');
+    } finally {
+      setProductActionLoadingId(null);
+    }
+  };
+
+  // Load Hosts from Backend API (Pending + All Hosts)
+  const fetchHostsData = async () => {
+    setLoadingHosts(true);
+    try {
+      const [pendingRes, allRes] = await Promise.all([
+        getPendingHostsApi(),
+        getAllHostsApi(),
+      ]);
+
+      if (pendingRes.success && Array.isArray(pendingRes.hosts)) {
+        setPendingHosts(pendingRes.hosts);
+      }
+      if (allRes.success && Array.isArray(allRes.hosts)) {
+        setAllHosts(allRes.hosts);
+      }
+    } catch (err) {
+      console.error('Failed to load host accounts:', err);
+      showToast('danger', err.response?.data?.message || 'Failed to fetch host accounts.');
+    } finally {
+      setLoadingHosts(false);
+    }
+  };
+
+  // Fetch Particular Host Details by ID
+  const handleViewHostDetails = async (hostId) => {
+    setLoadingHostDetails(true);
+    try {
+      const data = await getHostDetailsApi(hostId);
+      if (data.success && data.host) {
+        setSelectedHost(data.host);
+      }
+    } catch (err) {
+      console.error('Failed to fetch host details:', err);
+      showToast('danger', err.response?.data?.message || 'Failed to load host profile details.');
+    } finally {
+      setLoadingHostDetails(false);
+    }
+  };
+
+  // Handle Host Approval or Status Change ('active' or 'blocked')
+  const handleHostStatusChange = async (targetHostId, status) => {
+    if (!targetHostId) return;
+    setActionLoadingId(targetHostId);
+    try {
+      const data = await updateHostStatusApi(targetHostId, status);
+      if (data.success) {
+        const updatedStatus = data.host?.status || status;
+        showToast(
+          updatedStatus === 'active' ? 'success' : 'warning',
+          data.message || (updatedStatus === 'active' ? 'Host approved successfully.' : 'Host account blocked successfully.')
+        );
+        // Remove host from pending list
+        setPendingHosts(prev => prev.filter(h => (h._id || h.id) !== targetHostId));
+        // Update host status in allHosts array immediately
+        setAllHosts(prev => prev.map(h => {
+          const currentId = h._id || h.id;
+          return currentId === targetHostId ? { ...h, status: updatedStatus } : h;
+        }));
+        // Update modal state if open
+        if (selectedHost && (selectedHost._id === targetHostId || selectedHost.id === targetHostId)) {
+          setSelectedHost(prev => prev ? { ...prev, status: updatedStatus } : null);
+        }
+        // Refresh full host list and stats from server
+        fetchHostsData();
+        fetchAdminStats();
+      }
+    } catch (err) {
+      showToast('danger', err.response?.data?.message || 'Failed to update host status.');
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  // Load Platform Statistics from Backend API
+  const fetchAdminStats = async () => {
+    setLoadingStats(true);
+    try {
+      const data = await getAdminStatsApi();
+      if (data.success && data.stats) {
+        setStats(data.stats);
+      }
+    } catch (err) {
+      console.error('Failed to load admin stats:', err);
+    } finally {
+      setLoadingStats(false);
+    }
+  };
+
+  // Load All Stores from Backend API
+  const fetchStoresData = async () => {
+    setLoadingStores(true);
+    try {
+      const data = await getAllStoresApi();
+      if (data.success && Array.isArray(data.stores)) {
+        setStores(data.stores);
+      }
+    } catch (err) {
+      console.error('Failed to load stores:', err);
+      showToast('danger', err.response?.data?.message || 'Failed to fetch stores.');
+    } finally {
+      setLoadingStores(false);
+    }
+  };
+
+  // Fetch Particular Store Details by ID
+  const handleViewStoreDetails = async (storeId) => {
+    setLoadingStoreDetails(true);
+    try {
+      const data = await getStoreDetailsApi(storeId);
+      if (data.success && data.store) {
+        setSelectedStore(data.store);
+      }
+    } catch (err) {
+      console.error('Failed to fetch store details:', err);
+      showToast('danger', err.response?.data?.message || 'Failed to load store details.');
+    } finally {
+      setLoadingStoreDetails(false);
+    }
+  };
+
+  // Handle Store Status Change ('active', 'suspended', 'closed')
+  const handleStoreStatusChange = async (targetStoreId, status) => {
+    if (!targetStoreId) return;
+    setStoreActionLoadingId(targetStoreId);
+    try {
+      const data = await updateStoreStatusApi(targetStoreId, status);
+      if (data.success) {
+        const updatedStatus = data.store?.status || status;
+        showToast(
+          updatedStatus === 'active' ? 'success' : updatedStatus === 'suspended' ? 'warning' : 'danger',
+          data.message || `Store status updated to ${updatedStatus}.`
+        );
+        // Update store status in stores state array
+        setStores(prev => prev.map(s => {
+          const currentId = s._id || s.id;
+          return currentId === targetStoreId ? { ...s, status: updatedStatus } : s;
+        }));
+        // Update modal if open
+        if (selectedStore && (selectedStore._id === targetStoreId || selectedStore.id === targetStoreId)) {
+          setSelectedStore(prev => prev ? { ...prev, status: updatedStatus } : null);
+        }
+        // Refresh store list & admin stats
+        fetchStoresData();
+        fetchAdminStats();
+      }
+    } catch (err) {
+      showToast('danger', err.response?.data?.message || 'Failed to update store status.');
+    } finally {
+      setStoreActionLoadingId(null);
+    }
+  };
+
+  useEffect(() => {
+    fetchCategories();
+    fetchProducts();
+    fetchHostsData();
+    fetchStoresData();
+    fetchAdminStats();
+  }, []);
+
+  // Category Submit (Create / Update)
+  const handleCategorySubmit = async (e) => {
+    e.preventDefault();
+    if (!categoryForm.name.trim()) return;
+
+    try {
+      if (editingCategory) {
+        const data = await updateCategoryApi(editingCategory._id, categoryForm);
+        if (data.success && data.category) {
+          showToast('success', `Category "${data.category.name}" updated successfully!`);
+          setCategories(prev => prev.map(c => c._id === data.category._id ? data.category : c));
+        }
+      } else {
+        const data = await createCategoryApi(categoryForm);
+        if (data.success && data.category) {
+          showToast('success', `Category "${data.category.name}" created successfully!`);
+          setCategories(prev => [...prev, data.category]);
+        }
+      }
+      setCategoryForm({ name: '', description: '', image: '', status: 'active' });
+      setEditingCategory(null);
+    } catch (err) {
+      showToast('danger', err.response?.data?.message || 'Failed to save category.');
+    }
+  };
+
+  // Category Toggle Active / Inactive Status
+  const handleToggleCategoryStatus = async (cat) => {
+    const targetStatus = cat.status === 'inactive' ? 'active' : 'inactive';
+    try {
+      const data = await updateCategoryApi(cat._id, { status: targetStatus });
+      if (data.success) {
+        showToast(
+          targetStatus === 'active' ? 'success' : 'warning',
+          `Category "${cat.name}" status changed to ${targetStatus.toUpperCase()}.`
+        );
+        setCategories(prev =>
+          prev.map(item => (item._id === cat._id ? { ...item, status: targetStatus } : item))
+        );
+      }
+    } catch (err) {
+      showToast('danger', err.response?.data?.message || 'Failed to update category status.');
     }
   };
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg)' }}>
-      {/* Sidebar */}
-      <div style={{ width: 248, background: '#0A0F1E', flexShrink: 0, position: 'sticky', top: 0, height: '100vh', overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
-        <div style={{ padding: '20px 20px 16px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-          <Link to="/" style={{ display: 'flex', alignItems: 'center', gap: 8, textDecoration: 'none' }}>
-            <div style={{ width: 34, height: 34, background: 'linear-gradient(135deg, var(--accent) 0%, #DC2626 100%)', borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 900, fontSize: 16 }}>A</div>
-            <div>
-              <div style={{ fontSize: 14, fontWeight: 900, color: 'white', lineHeight: 1 }}>Admin Panel</div>
-              <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.35)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>ShopSphere</div>
+    <>
+      <Navbar />
+      <div className="bg-light min-vh-100 py-4">
+        <div className="container">
+          
+          {/* Toast Banner */}
+          {feedback.message && (
+            <div className={`alert alert-${feedback.type} alert-dismissible fade show d-flex align-items-center gap-2`} role="alert">
+              <FiAlertCircle />
+              <div>{feedback.message}</div>
+              <button type="button" className="btn-close" onClick={() => setFeedback({ type: '', message: '' })} />
             </div>
-          </Link>
-        </div>
+          )}
 
-        <div style={{ padding: '14px 16px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <img src={user.avatar} alt="" style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover', border: '2px solid rgba(239,68,68,0.4)' }} />
-            <div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: 'white' }}>{user.name}</div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--success)' }} />
-                <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>Super Admin</span>
+          {/* Admin Header */}
+          <div className="bg-dark text-white rounded-4 p-4 mb-4 shadow-sm" style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%)' }}>
+            <div className="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3">
+              <div>
+                <span className="badge bg-danger text-white mb-2 text-uppercase fw-bold" style={{ fontSize: 10 }}>Admin Control Panel</span>
+                <h2 className="fw-bold mb-1">ShopSphere Platform Overview</h2>
+                <p className="small text-white-50 mb-0">System metrics, category management, host approval & product moderation.</p>
               </div>
             </div>
           </div>
-        </div>
 
-        <nav style={{ flex: 1, padding: '10px 10px', overflowY: 'auto' }}>
-          {SIDEBAR.map(({ id, label, icon: Icon }) => (
-            <button
-              key={id}
-              onClick={() => setActive(id)}
-              style={{
-                width: '100%', display: 'flex', alignItems: 'center', gap: 10,
-                padding: '9px 12px', borderRadius: 7, border: 'none', cursor: 'pointer',
-                fontSize: 12.5, fontWeight: active === id ? 700 : 400,
-                background: active === id ? 'rgba(249,115,22,0.2)' : 'transparent',
-                color: active === id ? '#FED7AA' : 'rgba(255,255,255,0.55)',
-                transition: 'all 0.15s', marginBottom: 2, textAlign: 'left',
-                borderLeft: active === id ? '3px solid var(--accent)' : '3px solid transparent',
-              }}
-              onMouseEnter={e => { if (active !== id) { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; e.currentTarget.style.color = 'rgba(255,255,255,0.85)'; } }}
-              onMouseLeave={e => { if (active !== id) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'rgba(255,255,255,0.55)'; } }}
-            >
-              <Icon size={15} style={{ flexShrink: 0 }} /> {label}
-            </button>
-          ))}
-        </nav>
+          {/* Nav Tabs */}
+          <ul className="nav nav-pills bg-white p-2 rounded-4 shadow-sm mb-4 gap-2 border">
+            {[
+              { id: 'overview', label: 'Overview', icon: FiGrid },
+              { id: 'categories', label: 'Categories Management', icon: FiTag },
+              { id: 'hosts', label: 'Host Management', icon: FiShoppingBag },
+              { id: 'stores', label: 'Store Management', icon: FiHome },
+              { id: 'products', label: 'Products View', icon: FiPackage },
+              { id: 'orders', label: 'Orders & Revenue', icon: FiDollarSign },
+            ].map(tab => {
+              const Icon = tab.icon;
+              return (
+                <li key={tab.id} className="nav-item">
+                  <button
+                    className={`nav-link fw-semibold d-flex align-items-center gap-2 rounded-3 ${activeTab === tab.id ? 'active bg-primary' : 'text-dark'}`}
+                    style={activeTab === tab.id ? { background: '#4F46E5' } : {}}
+                    onClick={() => setActiveTab(tab.id)}
+                  >
+                    <Icon size={16} /> {tab.label}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
 
-        <div style={{ padding: '10px 10px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-          <button onClick={() => { logout(); navigate('/'); }} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 7, border: 'none', cursor: 'pointer', fontSize: 12.5, fontWeight: 500, background: 'transparent', color: 'rgba(255,255,255,0.4)', transition: 'all 0.15s' }}
-            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.15)'; e.currentTarget.style.color = '#FCA5A5'; }}
-            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'rgba(255,255,255,0.4)'; }}
-          ><FiLogOut size={14} /> Sign Out</button>
-        </div>
-      </div>
-
-      {/* Main */}
-      <div style={{ flex: 1, overflowX: 'hidden' }}>
-        <div style={{ background: 'white', padding: '16px 32px', borderBottom: '1px solid var(--secondary-200)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'sticky', top: 0, zIndex: 100 }}>
-          <div>
-            <h1 style={{ fontSize: 19, fontWeight: 800, margin: 0, textTransform: 'capitalize' }}>{active.replace(/-/g, ' ')}</h1>
-            <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: 0 }}>Platform Admin Control Panel</p>
-          </div>
-          <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-            <div style={{ fontSize: 12, color: 'var(--text-muted)', background: 'var(--secondary-100)', padding: '6px 14px', borderRadius: 'var(--radius-full)', fontWeight: 600 }}>
-              🕐 Last updated: just now
-            </div>
-          </div>
-        </div>
-        <div style={{ padding: '28px 32px' }}>
-          <motion.div key={active} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}>
-            {renderContent()}
-          </motion.div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function AdminDashboardHome({ stats, salesData }) {
-  const maxSales = Math.max(...salesData.map(d => d.sales));
-  return (
-    <div>
-      <div className="row g-3 mb-4">
-        {stats.map((stat, i) => (
-          <div key={stat.label} className="col-6 col-xl-3">
-            <motion.div initial={{ opacity: 0, scale: 0.92 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: i * 0.05 }} className="stat-card">
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                <div style={{ fontSize: 28 }}>{stat.icon}</div>
-                <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--success)', display: 'flex', alignItems: 'center', gap: 2 }}>
-                  <FiArrowUp size={10} /> {stat.sub}
-                </span>
-              </div>
-              <div style={{ fontSize: 24, fontWeight: 900, color: stat.color, marginBottom: 4 }}>{stat.value}</div>
-              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{stat.label}</div>
-            </motion.div>
-          </div>
-        ))}
-      </div>
-
-      <div className="row g-4 mb-4">
-        <div className="col-12 col-lg-8">
-          <div className="chart-container">
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
-              <h6 style={{ fontWeight: 700, margin: 0 }}>Platform Revenue (Last 6 Months)</h6>
-              <div style={{ display: 'flex', gap: 8 }}>
-                {['Revenue', 'Earnings'].map(l => (
-                  <div key={l} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--text-muted)' }}>
-                    <div style={{ width: 10, height: 10, borderRadius: '50%', background: l === 'Revenue' ? 'var(--primary)' : 'var(--accent)' }} /> {l}
+          {/* TAB 1: OVERVIEW */}
+          {activeTab === 'overview' && (
+            <div>
+              <div className="row g-3 mb-4">
+                {/* Stat 1: Registered Users */}
+                <div className="col-6 col-md-3">
+                  <div className="card border-0 shadow-sm rounded-4 p-3 bg-white h-100">
+                    <div className="d-flex align-items-center justify-content-between text-muted small fw-semibold mb-1">
+                      <span>Total Customers</span>
+                      <FiUsers className="text-primary" />
+                    </div>
+                    <div className="display-6 fw-bold text-primary my-1">
+                      {loadingStats ? (
+                        <div className="spinner-border spinner-border-sm text-primary" role="status" />
+                      ) : (
+                        stats?.users?.total ?? 0
+                      )}
+                    </div>
+                    <div className="small text-muted">Registered buyer accounts</div>
                   </div>
+                </div>
+
+                {/* Stat 2: Hosts / Sellers */}
+                <div className="col-6 col-md-3">
+                  <div className="card border-0 shadow-sm rounded-4 p-3 bg-white h-100">
+                    <div className="d-flex align-items-center justify-content-between text-muted small fw-semibold mb-1">
+                      <span>Total Sellers / Hosts</span>
+                      <FiShoppingBag className="text-warning" />
+                    </div>
+                    <div className="display-6 fw-bold text-warning my-1">
+                      {loadingStats ? (
+                        <div className="spinner-border spinner-border-sm text-warning" role="status" />
+                      ) : (
+                        stats?.hosts?.total ?? 0
+                      )}
+                    </div>
+                    <div className="small text-muted d-flex gap-2 flex-wrap">
+                      <span className="badge bg-success-subtle text-success">{stats?.hosts?.active ?? 0} Active</span>
+                      <span className="badge bg-warning-subtle text-dark">{stats?.hosts?.pending ?? pendingHosts.length} Pending</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Stat 3: Stores */}
+                <div className="col-6 col-md-3">
+                  <div className="card border-0 shadow-sm rounded-4 p-3 bg-white h-100">
+                    <div className="d-flex align-items-center justify-content-between text-muted small fw-semibold mb-1">
+                      <span>Total Stores</span>
+                      <FiGrid className="text-info" />
+                    </div>
+                    <div className="display-6 fw-bold text-info my-1">
+                      {loadingStats ? (
+                        <div className="spinner-border spinner-border-sm text-info" role="status" />
+                      ) : (
+                        stats?.stores?.total ?? 0
+                      )}
+                    </div>
+                    <div className="small text-muted">
+                      <span className="badge bg-info-subtle text-info">{stats?.stores?.active ?? 0} Active Stores</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Stat 4: Products */}
+                <div className="col-6 col-md-3">
+                  <div className="card border-0 shadow-sm rounded-4 p-3 bg-white h-100">
+                    <div className="d-flex align-items-center justify-content-between text-muted small fw-semibold mb-1">
+                      <span>Total Products</span>
+                      <FiPackage style={{ color: '#4F46E5' }} />
+                    </div>
+                    <div className="display-6 fw-bold my-1" style={{ color: '#4F46E5' }}>
+                      {loadingStats ? (
+                        <div className="spinner-border spinner-border-sm text-indigo" role="status" />
+                      ) : (
+                        stats?.products?.total ?? products.length
+                      )}
+                    </div>
+                    <div className="small text-muted d-flex gap-2 flex-wrap">
+                      <span className="badge bg-success-subtle text-success">{stats?.products?.active ?? 0} Active</span>
+                      {stats?.products?.outOfStock > 0 && (
+                        <span className="badge bg-danger-subtle text-danger">{stats.products.outOfStock} Out of Stock</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Detailed Platform Breakdown */}
+              <div className="card border-0 shadow-sm rounded-4 p-4 bg-white">
+                <h5 className="fw-bold text-dark mb-3">Platform System Summary</h5>
+                <div className="row g-3">
+                  <div className="col-12 col-md-4">
+                    <div className="p-3 bg-light rounded-3 border">
+                      <div className="fw-semibold text-dark mb-2">Host Application Pipeline</div>
+                      <div className="d-flex justify-content-between align-items-center mb-1">
+                        <span className="small text-muted">Pending Review</span>
+                        <span className="badge bg-warning text-dark fw-bold">{stats?.hosts?.pending ?? pendingHosts.length}</span>
+                      </div>
+                      <div className="d-flex justify-content-between align-items-center mb-1">
+                        <span className="small text-muted">Active Approved Hosts</span>
+                        <span className="badge bg-success fw-bold">{stats?.hosts?.active ?? 0}</span>
+                      </div>
+                      <div className="d-flex justify-content-between align-items-center">
+                        <span className="small text-muted">Blocked Hosts</span>
+                        <span className="badge bg-danger fw-bold">{stats?.hosts?.blocked ?? 0}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="col-12 col-md-4">
+                    <div className="p-3 bg-light rounded-3 border">
+                      <div className="fw-semibold text-dark mb-2">Store Ecosystem</div>
+                      <div className="d-flex justify-content-between align-items-center mb-1">
+                        <span className="small text-muted">Total Registered Stores</span>
+                        <span className="fw-bold">{stats?.stores?.total ?? 0}</span>
+                      </div>
+                      <div className="d-flex justify-content-between align-items-center">
+                        <span className="small text-muted">Active Operating Stores</span>
+                        <span className="badge bg-info fw-bold">{stats?.stores?.active ?? 0}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="col-12 col-md-4">
+                    <div className="p-3 bg-light rounded-3 border">
+                      <div className="fw-semibold text-dark mb-2">Product Catalog Status</div>
+                      <div className="d-flex justify-content-between align-items-center mb-1">
+                        <span className="small text-muted">Active Products</span>
+                        <span className="badge bg-success fw-bold">{stats?.products?.active ?? 0}</span>
+                      </div>
+                      <div className="d-flex justify-content-between align-items-center">
+                        <span className="small text-muted">Out of Stock Items</span>
+                        <span className="badge bg-secondary fw-bold">{stats?.products?.outOfStock ?? 0}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 2: CATEGORIES MANAGEMENT (FULL CRUD WITH ACTIVE/INACTIVE TOGGLE) */}
+          {activeTab === 'categories' && (
+            <div className="row g-4">
+              {/* Category Form */}
+              <div className="col-12 col-md-5">
+                <div className="card border-0 shadow-sm rounded-4 p-4 bg-white">
+                  <h5 className="fw-bold text-dark mb-3">
+                    {editingCategory ? `Edit Category: ${editingCategory.name}` : 'Add New Category'}
+                  </h5>
+                  <form onSubmit={handleCategorySubmit}>
+                    <div className="mb-3">
+                      <label className="form-label fw-semibold small">Category Name *</label>
+                      <input
+                        type="text"
+                        className="form-control"
+                        placeholder="e.g. Electronics, Fashion"
+                        value={categoryForm.name}
+                        onChange={(e) => setCategoryForm({ ...categoryForm, name: e.target.value })}
+                        required
+                      />
+                    </div>
+
+                    <div className="mb-3">
+                      <label className="form-label fw-semibold small">Description</label>
+                      <textarea
+                        className="form-control"
+                        rows={3}
+                        placeholder="Short description..."
+                        value={categoryForm.description}
+                        onChange={(e) => setCategoryForm({ ...categoryForm, description: e.target.value })}
+                      />
+                    </div>
+
+                    <div className="mb-3">
+                      <label className="form-label fw-semibold small">Image URL</label>
+                      <input
+                        type="text"
+                        className="form-control"
+                        placeholder="https://..."
+                        value={categoryForm.image}
+                        onChange={(e) => setCategoryForm({ ...categoryForm, image: e.target.value })}
+                      />
+                    </div>
+
+                    {editingCategory && (
+                      <div className="mb-3">
+                        <label className="form-label fw-semibold small">Category Status</label>
+                        <select
+                          className="form-select"
+                          value={categoryForm.status}
+                          onChange={(e) => setCategoryForm({ ...categoryForm, status: e.target.value })}
+                        >
+                          <option value="active">Active</option>
+                          <option value="inactive">Inactive</option>
+                        </select>
+                      </div>
+                    )}
+
+                    <div className="d-flex gap-2">
+                      <button type="submit" className="btn btn-primary rounded-pill fw-bold px-4" style={{ background: '#4F46E5' }}>
+                        {editingCategory ? 'Save Changes' : '+ Create Category'}
+                      </button>
+                      {editingCategory && (
+                        <button
+                          type="button"
+                          className="btn btn-light rounded-pill px-3"
+                          onClick={() => {
+                            setEditingCategory(null);
+                            setCategoryForm({ name: '', description: '', image: '', status: 'active' });
+                          }}
+                        >
+                          Cancel
+                        </button>
+                      )}
+                    </div>
+                  </form>
+                </div>
+              </div>
+
+              {/* Categories Table */}
+              <div className="col-12 col-md-7">
+                <div className="card border-0 shadow-sm rounded-4 p-4 bg-white">
+                  <div className="d-flex align-items-center justify-content-between mb-3">
+                    <h5 className="fw-bold text-dark mb-0">Categories List ({categories.length})</h5>
+                    <span className="badge bg-light text-muted border">
+                      {categories.filter(c => c.status === 'active').length} Active | {categories.filter(c => c.status === 'inactive').length} Inactive
+                    </span>
+                  </div>
+
+                  {loadingCategories ? (
+                    <div className="text-center py-4">
+                      <div className="spinner-border text-primary" role="status" />
+                    </div>
+                  ) : categories.length === 0 ? (
+                    <div className="text-center py-4 text-muted">No categories found.</div>
+                  ) : (
+                    <div className="table-responsive">
+                      <table className="table table-hover align-middle mb-0">
+                        <thead className="table-light">
+                          <tr>
+                            <th>Category</th>
+                            <th>Slug</th>
+                            <th>Status</th>
+                            <th className="text-end">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {categories.map((cat) => (
+                            <tr key={cat._id} className={cat.status === 'inactive' ? 'table-secondary opacity-75' : ''}>
+                              <td className="fw-semibold text-dark">{cat.name}</td>
+                              <td className="small text-muted">{cat.slug}</td>
+                              <td>
+                                <span className={`badge ${cat.status === 'active' ? 'bg-success' : 'bg-secondary'}`}>
+                                  {cat.status || 'active'}
+                                </span>
+                              </td>
+                              <td className="text-end">
+                                <button
+                                  className="btn btn-sm btn-outline-primary me-2"
+                                  onClick={() => {
+                                    setEditingCategory(cat);
+                                    setCategoryForm({
+                                      name: cat.name,
+                                      description: cat.description || '',
+                                      image: cat.image || '',
+                                      status: cat.status || 'active',
+                                    });
+                                  }}
+                                >
+                                  <FiEdit /> Edit
+                                </button>
+
+                                {cat.status === 'inactive' ? (
+                                  <button
+                                    className="btn btn-sm btn-outline-success"
+                                    onClick={() => handleToggleCategoryStatus(cat)}
+                                    title="Click to Activate Category"
+                                  >
+                                    <FiCheckCircle /> Activate
+                                  </button>
+                                ) : (
+                                  <button
+                                    className="btn btn-sm btn-outline-warning text-dark"
+                                    onClick={() => handleToggleCategoryStatus(cat)}
+                                    title="Click to Deactivate Category"
+                                  >
+                                    <FiXCircle /> Deactivate
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 3: HOST MANAGEMENT */}
+          {activeTab === 'hosts' && (
+            <div className="card border-0 shadow-sm rounded-4 p-4 bg-white">
+              <div className="d-flex flex-column flex-md-row align-items-md-center justify-content-between mb-4 gap-2">
+                <div>
+                  <h5 className="fw-bold text-dark mb-1">Host & Seller Management ({allHosts.length})</h5>
+                  <p className="small text-muted mb-0">Review pending host applications, inspect seller profiles, and manage active accounts.</p>
+                </div>
+                <button
+                  className="btn btn-outline-secondary btn-sm rounded-pill d-flex align-items-center gap-1 align-self-start align-self-md-auto"
+                  onClick={fetchHostsData}
+                  disabled={loadingHosts}
+                >
+                  <FiRefreshCw className={loadingHosts ? 'spin' : ''} /> Refresh Hosts
+                </button>
+              </div>
+
+              {/* Status Filters */}
+              <div className="d-flex gap-2 mb-4 flex-wrap">
+                {[
+                  { key: 'all', label: `All Hosts (${allHosts.length})` },
+                  { key: 'pending', label: `Pending Approval (${allHosts.filter(h => h.status === 'pending').length})` },
+                  { key: 'active', label: `Active (${allHosts.filter(h => h.status === 'active').length})` },
+                  { key: 'blocked', label: `Blocked (${allHosts.filter(h => h.status === 'blocked').length})` },
+                ].map(filter => (
+                  <button
+                    key={filter.key}
+                    className={`btn btn-sm rounded-pill px-3 fw-semibold ${hostFilter === filter.key ? 'btn-primary' : 'btn-light text-dark border'}`}
+                    style={hostFilter === filter.key ? { background: '#4F46E5', borderColor: '#4F46E5' } : {}}
+                    onClick={() => setHostFilter(filter.key)}
+                  >
+                    {filter.label}
+                  </button>
                 ))}
               </div>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, height: 200 }}>
-              {salesData.map((d, i) => (
-                <div key={d.month} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, height: '100%', justifyContent: 'flex-end' }}>
-                  <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 600 }}>₹{formatCompact(d.sales)}</div>
-                  <motion.div
-                    initial={{ height: 0 }}
-                    animate={{ height: `${(d.sales / maxSales) * 160}px` }}
-                    transition={{ delay: i * 0.1, duration: 0.7 }}
-                    style={{ width: '100%', borderRadius: '6px 6px 0 0', background: i === salesData.length - 1 ? 'linear-gradient(180deg, var(--accent) 0%, var(--accent-dark) 100%)' : 'linear-gradient(180deg, var(--primary)50 0%, var(--primary)25 100%)' }}
-                  />
-                  <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)' }}>{d.month}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
 
-        <div className="col-12 col-lg-4">
-          <div className="chart-container" style={{ height: '100%' }}>
-            <h6 style={{ fontWeight: 700, marginBottom: 20 }}>Platform Health</h6>
-            {[
-              { label: 'Server Uptime', value: 99.98, color: 'var(--success)' },
-              { label: 'Order Fulfillment', value: 94.2, color: 'var(--primary)' },
-              { label: 'Seller Satisfaction', value: 88.7, color: 'var(--accent)' },
-              { label: 'Buyer Retention', value: 72.4, color: 'var(--purple)' },
-            ].map(m => (
-              <div key={m.label} style={{ marginBottom: 16 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, fontSize: 13 }}>
-                  <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>{m.label}</span>
-                  <span style={{ fontWeight: 700, color: m.color }}>{m.value}%</span>
+              {loadingHosts ? (
+                <div className="text-center py-5">
+                  <div className="spinner-border text-primary" role="status" />
+                  <p className="text-muted small mt-2">Loading host accounts...</p>
                 </div>
-                <div className="progress-custom">
-                  <motion.div className="progress-fill" initial={{ width: 0 }} animate={{ width: `${m.value}%` }} transition={{ duration: 1, delay: 0.3 }} style={{ background: `linear-gradient(90deg, ${m.color}, ${m.color}88)` }} />
+              ) : (() => {
+                const displayedHosts = hostFilter === 'all'
+                  ? allHosts
+                  : allHosts.filter(h => h.status === hostFilter);
+
+                if (displayedHosts.length === 0) {
+                  return (
+                    <div className="text-center py-5 text-muted">
+                      <div className="display-5 text-secondary mb-2">🏪</div>
+                      <h5 className="fw-bold text-dark">No Host Accounts Found</h5>
+                      <p className="small text-muted mb-0">No sellers match the selected filter category ({hostFilter}).</p>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="table-responsive">
+                    <table className="table table-hover align-middle mb-0">
+                      <thead className="table-light">
+                        <tr>
+                          <th>Host Name</th>
+                          <th>Email</th>
+                          <th>Registered Date</th>
+                          <th>Status</th>
+                          <th className="text-end">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {displayedHosts.map((host) => (
+                          <tr key={host._id}>
+                            <td>
+                              <div className="fw-semibold text-dark">
+                                {host.firstName} {host.lastName}
+                              </div>
+                              <div className="small text-muted" style={{ fontSize: 11 }}>ID: {host._id}</div>
+                            </td>
+                            <td className="small text-muted">{host.email}</td>
+                            <td className="small text-muted">
+                              {host.createdAt ? new Date(host.createdAt).toLocaleDateString(undefined, {
+                                year: 'numeric',
+                                month: 'short',
+                                day: 'numeric'
+                              }) : 'N/A'}
+                            </td>
+                            <td>
+                              <span className={`badge ${host.status === 'active' ? 'bg-success' : host.status === 'pending' ? 'bg-warning text-dark' : 'bg-danger'} d-inline-flex align-items-center gap-1 px-2 py-1`}>
+                                {host.status === 'pending' && <FiClock size={12} />}
+                                {host.status || 'pending'}
+                              </span>
+                            </td>
+                            <td className="text-end">
+                              <div className="d-flex justify-content-end gap-2">
+                                <button
+                                  className="btn btn-sm btn-outline-secondary rounded-pill px-3 d-inline-flex align-items-center gap-1"
+                                  onClick={() => handleViewHostDetails(host._id)}
+                                  title="View Host Profile"
+                                >
+                                  <FiEye size={14} /> Profile
+                                </button>
+
+                                {host.status !== 'active' && (
+                                  <button
+                                    className="btn btn-sm btn-success rounded-pill px-3 d-inline-flex align-items-center gap-1"
+                                    onClick={() => handleHostStatusChange(host._id, 'active')}
+                                    disabled={actionLoadingId === host._id}
+                                  >
+                                    {actionLoadingId === host._id ? (
+                                      <span className="spinner-border spinner-border-sm" role="status" />
+                                    ) : (
+                                      <>
+                                        <FiCheck size={14} /> Approve
+                                      </>
+                                    )}
+                                  </button>
+                                )}
+
+                                {host.status !== 'blocked' && (
+                                  <button
+                                    className="btn btn-sm btn-outline-danger rounded-pill px-3 d-inline-flex align-items-center gap-1"
+                                    onClick={() => handleHostStatusChange(host._id, 'blocked')}
+                                    disabled={actionLoadingId === host._id}
+                                  >
+                                    {actionLoadingId === host._id ? (
+                                      <span className="spinner-border spinner-border-sm" role="status" />
+                                    ) : (
+                                      <>
+                                        <FiX size={14} /> Block
+                                      </>
+                                    )}
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
+          {/* Host Profile Details Modal */}
+          {selectedHost && (
+            <div className="modal fade show d-block" tabIndex="-1" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+              <div className="modal-dialog modal-dialog-centered">
+                <div className="modal-content rounded-4 border-0 shadow">
+                  <div className="modal-header border-bottom-0 pb-0">
+                    <h5 className="modal-title fw-bold text-dark">Host Account Profile</h5>
+                    <button type="button" className="btn-close" onClick={() => setSelectedHost(null)} />
+                  </div>
+                  <div className="modal-body p-4">
+                    <div className="d-flex align-items-center gap-3 mb-4">
+                      <div className="bg-primary text-white rounded-circle d-flex align-items-center justify-content-center fw-bold fs-4 shadow-sm" style={{ width: 56, height: 56, background: '#4F46E5' }}>
+                        {selectedHost.firstName?.charAt(0)}{selectedHost.lastName?.charAt(0)}
+                      </div>
+                      <div>
+                        <h5 className="fw-bold mb-0">{selectedHost.firstName} {selectedHost.lastName}</h5>
+                        <span className="text-muted small">{selectedHost.email}</span>
+                      </div>
+                    </div>
+                    
+                    <div className="bg-light p-3 rounded-3 mb-4 border">
+                      <div className="row g-3 small">
+                        <div className="col-6">
+                          <span className="text-muted d-block">Account Role</span>
+                          <span className="fw-bold text-capitalize badge bg-secondary">{selectedHost.role}</span>
+                        </div>
+                        <div className="col-6">
+                          <span className="text-muted d-block">Current Status</span>
+                          <span className={`badge ${selectedHost.status === 'active' ? 'bg-success' : selectedHost.status === 'pending' ? 'bg-warning text-dark' : 'bg-danger'}`}>
+                            {selectedHost.status}
+                          </span>
+                        </div>
+                        <div className="col-12">
+                          <span className="text-muted d-block">User ID</span>
+                          <code className="text-dark bg-white p-1 rounded border d-inline-block">{selectedHost._id}</code>
+                        </div>
+                        <div className="col-12">
+                          <span className="text-muted d-block">Registered Date</span>
+                          <span className="fw-bold text-dark">
+                            {selectedHost.createdAt ? new Date(selectedHost.createdAt).toLocaleString() : 'N/A'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="d-flex gap-2 justify-content-end">
+                      {selectedHost.status !== 'active' && (
+                        <button
+                          className="btn btn-success rounded-pill px-4 fw-bold"
+                          onClick={() => handleHostStatusChange(selectedHost._id, 'active')}
+                          disabled={actionLoadingId === selectedHost._id}
+                        >
+                          Approve & Activate Host
+                        </button>
+                      )}
+                      {selectedHost.status !== 'blocked' && (
+                        <button
+                          className="btn btn-outline-danger rounded-pill px-4 fw-bold"
+                          onClick={() => handleHostStatusChange(selectedHost._id, 'blocked')}
+                          disabled={actionLoadingId === selectedHost._id}
+                        >
+                          Block Host Account
+                        </button>
+                      )}
+                      <button className="btn btn-light rounded-pill px-3" onClick={() => setSelectedHost(null)}>
+                        Close
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function UsersTab() {
-  const demoUsers = [
-    { id: 'u1', name: 'Yash Kumar', email: 'customer@demo.com', role: 'customer', status: 'active', joined: '2024-01-01', orders: 12 },
-    { id: 'u2', name: 'Rahul Sharma', email: 'rahul@example.com', role: 'customer', status: 'active', joined: '2024-01-05', orders: 8 },
-    { id: 'u3', name: 'Priya Patel', email: 'priya@example.com', role: 'customer', status: 'inactive', joined: '2023-12-10', orders: 3 },
-  ];
-  return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 20 }}>
-        <h5 style={{ fontWeight: 700, margin: 0 }}>All Users</h5>
-        <div style={{ display: 'flex', gap: 10 }}>
-          <input className="input-custom" placeholder="Search users..." style={{ width: 220, height: 38, fontSize: 13 }} />
-          <button className="btn-ghost" style={{ fontSize: 12 }}>Export CSV</button>
-        </div>
-      </div>
-      <div className="card-premium" style={{ overflow: 'hidden' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead><tr style={{ borderBottom: '2px solid var(--secondary-100)', background: 'var(--secondary-100)' }}>{['User', 'Email', 'Role', 'Status', 'Joined', 'Orders', 'Actions'].map(h => <th key={h} style={{ padding: '11px 16px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</th>)}</tr></thead>
-          <tbody>
-            {demoUsers.map(u => (
-              <tr key={u.id} style={{ borderBottom: '1px solid var(--secondary-100)' }}
-                onMouseEnter={e => e.currentTarget.style.background = 'var(--secondary-100)'}
-                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-              >
-                <td style={{ padding: '12px 16px' }}><div style={{ fontWeight: 600, fontSize: 13 }}>{u.name}</div></td>
-                <td style={{ padding: '12px 16px', fontSize: 13, color: 'var(--text-muted)' }}>{u.email}</td>
-                <td style={{ padding: '12px 16px' }}><span className="badge-primary" style={{ textTransform: 'capitalize', fontSize: 11 }}>{u.role}</span></td>
-                <td style={{ padding: '12px 16px' }}><span className={`badge-${u.status === 'active' ? 'success' : 'danger'}`} style={{ fontSize: 11 }}>{u.status}</span></td>
-                <td style={{ padding: '12px 16px', fontSize: 12, color: 'var(--text-muted)' }}>{u.joined}</td>
-                <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600 }}>{u.orders}</td>
-                <td style={{ padding: '12px 16px' }}><button style={{ fontSize: 11, color: 'var(--danger)', background: 'var(--danger-10)', border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontWeight: 600 }}>Suspend</button></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-function HostsTab() {
-  return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 20 }}>
-        <h5 style={{ fontWeight: 700, margin: 0 }}>All Sellers / Hosts</h5>
-        <button className="btn-ghost" style={{ fontSize: 12 }}>Export CSV</button>
-      </div>
-      <div className="card-premium" style={{ overflow: 'hidden' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead><tr style={{ borderBottom: '2px solid var(--secondary-100)', background: 'var(--secondary-100)' }}>{['Seller', 'Rating', 'Products', 'Sales', 'Revenue', 'Status', 'Actions'].map(h => <th key={h} style={{ padding: '11px 16px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</th>)}</tr></thead>
-          <tbody>
-            {sellers.map(s => (
-              <tr key={s.id} style={{ borderBottom: '1px solid var(--secondary-100)' }}
-                onMouseEnter={e => e.currentTarget.style.background = 'var(--secondary-100)'}
-                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-              >
-                <td style={{ padding: '12px 16px' }}><div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><img src={s.logo} alt="" style={{ width: 36, height: 36, borderRadius: 8, objectFit: 'cover' }} /><div style={{ fontWeight: 600, fontSize: 13 }}>{s.name}</div></div></td>
-                <td style={{ padding: '12px 16px', fontSize: 13 }}><span style={{ color: '#F59E0B' }}>★</span> {s.rating}</td>
-                <td style={{ padding: '12px 16px', fontSize: 13 }}>{s.products}</td>
-                <td style={{ padding: '12px 16px', fontSize: 13 }}>{s.sales.toLocaleString()}</td>
-                <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600 }}>{formatPrice(s.revenue)}</td>
-                <td style={{ padding: '12px 16px' }}><span className={`badge-${s.verified ? 'success' : 'warning'}`} style={{ fontSize: 11 }}>{s.verified ? '✓ Verified' : 'Pending'}</span></td>
-                <td style={{ padding: '12px 16px' }}><div style={{ display: 'flex', gap: 6 }}><button style={{ fontSize: 11, color: 'var(--primary)', background: 'var(--primary-10)', border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontWeight: 600 }}>View</button><button style={{ fontSize: 11, color: 'var(--danger)', background: 'var(--danger-10)', border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontWeight: 600 }}>Suspend</button></div></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-function ProductsTab() {
-  return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 20 }}>
-        <h5 style={{ fontWeight: 700, margin: 0 }}>All Products ({products.length})</h5>
-        <input className="input-custom" placeholder="Search products..." style={{ width: 240, height: 38, fontSize: 13 }} />
-      </div>
-      <div className="card-premium" style={{ overflow: 'hidden' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead><tr style={{ borderBottom: '2px solid var(--secondary-100)', background: 'var(--secondary-100)' }}>{['Product', 'Category', 'Price', 'Stock', 'Seller', 'Status', 'Actions'].map(h => <th key={h} style={{ padding: '11px 16px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</th>)}</tr></thead>
-          <tbody>
-            {products.slice(0, 8).map(p => (
-              <tr key={p.id} style={{ borderBottom: '1px solid var(--secondary-100)' }}
-                onMouseEnter={e => e.currentTarget.style.background = 'var(--secondary-100)'}
-                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-              >
-                <td style={{ padding: '12px 16px' }}><div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><img src={p.images[0]} alt="" style={{ width: 40, height: 40, borderRadius: 8, objectFit: 'cover', flexShrink: 0 }} /><div style={{ fontWeight: 600, fontSize: 12, maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div></div></td>
-                <td style={{ padding: '12px 16px' }}><span className="tag" style={{ fontSize: 11 }}>{p.category}</span></td>
-                <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600 }}>{formatPrice(p.price)}</td>
-                <td style={{ padding: '12px 16px', fontSize: 13, color: p.stock < 20 ? 'var(--danger)' : 'var(--success)', fontWeight: 600 }}>{p.stock}</td>
-                <td style={{ padding: '12px 16px', fontSize: 12, color: 'var(--text-muted)' }}>{p.seller.name}</td>
-                <td style={{ padding: '12px 16px' }}><span className="badge-success" style={{ fontSize: 10 }}>Active</span></td>
-                <td style={{ padding: '12px 16px' }}><div style={{ display: 'flex', gap: 6 }}><button style={{ fontSize: 11, color: 'var(--primary)', background: 'var(--primary-10)', border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontWeight: 600 }}>Edit</button><button style={{ fontSize: 11, color: 'var(--danger)', background: 'var(--danger-10)', border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontWeight: 600 }}>Remove</button></div></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-function AnalyticsTab({ data }) {
-  const maxSales = Math.max(...data.map(d => d.sales));
-  return (
-    <div>
-      <h5 style={{ fontWeight: 700, marginBottom: 24 }}>Platform Analytics</h5>
-      <div className="chart-container mb-4">
-        <h6 style={{ fontWeight: 700, marginBottom: 20 }}>Revenue Overview</h6>
-        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, height: 200 }}>
-          {data.map((d, i) => (
-            <div key={d.month} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, height: '100%', justifyContent: 'flex-end' }}>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>₹{formatCompact(d.sales)}</div>
-              <motion.div initial={{ height: 0 }} animate={{ height: `${(d.sales / maxSales) * 160}px` }} transition={{ delay: i * 0.1, duration: 0.7 }} style={{ width: '100%', borderRadius: '6px 6px 0 0', background: `linear-gradient(180deg, var(--accent) 0%, var(--accent-dark) 100%)`, opacity: i === data.length - 1 ? 1 : 0.5 }} />
-              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>{d.month}</div>
             </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
+          )}
 
-function BannersTab() {
-  const bannerTypes = [
-    { type: 'Hero Banner', count: 3, status: 'Active', preview: '🖼️' },
-    { type: 'Flash Sale', count: 1, status: 'Scheduled', preview: '⚡' },
-    { type: 'Festival', count: 2, status: 'Draft', preview: '🎉' },
-    { type: 'Coupon', count: 4, status: 'Active', preview: '🎟️' },
-  ];
-  return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 20 }}>
-        <h5 style={{ fontWeight: 700, margin: 0 }}>Banner Manager</h5>
-        <button className="btn-primary-custom" style={{ fontSize: 13, padding: '8px 20px' }}>+ Create Banner</button>
-      </div>
-      <div className="row g-3">
-        {bannerTypes.map(b => (
-          <div key={b.type} className="col-12 col-md-6">
-            <div className="card-premium" style={{ padding: 24, display: 'flex', alignItems: 'center', gap: 16 }}>
-              <div style={{ fontSize: 48 }}>{b.preview}</div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>{b.type}</div>
-                <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 8 }}>{b.count} banners</div>
-                <span className={`badge-${b.status === 'Active' ? 'success' : b.status === 'Scheduled' ? 'primary' : 'warning'}`} style={{ fontSize: 11 }}>{b.status}</span>
+          {/* TAB 4: STORE MANAGEMENT */}
+          {activeTab === 'stores' && (
+            <div className="card border-0 shadow-sm rounded-4 p-4 bg-white">
+              <div className="d-flex flex-column flex-md-row align-items-md-center justify-content-between mb-4 gap-2">
+                <div>
+                  <h5 className="fw-bold text-dark mb-1">Platform Store Management ({stores.length})</h5>
+                  <p className="small text-muted mb-0">Review seller stores, check store owner details, and manage store operational status.</p>
+                </div>
+                <button
+                  className="btn btn-outline-secondary btn-sm rounded-pill d-flex align-items-center gap-1 align-self-start align-self-md-auto"
+                  onClick={fetchStoresData}
+                  disabled={loadingStores}
+                >
+                  <FiRefreshCw className={loadingStores ? 'spin' : ''} /> Refresh Stores
+                </button>
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <button style={{ fontSize: 12, color: 'var(--primary)', background: 'var(--primary-10)', border: 'none', borderRadius: 6, padding: '5px 12px', cursor: 'pointer', fontWeight: 600 }}>Manage</button>
-                <button style={{ fontSize: 12, color: 'var(--text-muted)', background: 'var(--secondary-100)', border: 'none', borderRadius: 6, padding: '5px 12px', cursor: 'pointer', fontWeight: 600 }}>Preview</button>
+
+              {/* Status Filters */}
+              <div className="d-flex gap-2 mb-4 flex-wrap">
+                {[
+                  { key: 'all', label: `All Stores (${stores.length})` },
+                  { key: 'active', label: `Active (${stores.filter(s => s.status === 'active').length})` },
+                  { key: 'suspended', label: `Suspended (${stores.filter(s => s.status === 'suspended').length})` },
+                  { key: 'closed', label: `Closed (${stores.filter(s => s.status === 'closed').length})` },
+                ].map(filter => (
+                  <button
+                    key={filter.key}
+                    className={`btn btn-sm rounded-pill px-3 fw-semibold ${storeFilter === filter.key ? 'btn-primary' : 'btn-light text-dark border'}`}
+                    style={storeFilter === filter.key ? { background: '#4F46E5', borderColor: '#4F46E5' } : {}}
+                    onClick={() => setStoreFilter(filter.key)}
+                  >
+                    {filter.label}
+                  </button>
+                ))}
+              </div>
+
+              {loadingStores ? (
+                <div className="text-center py-5">
+                  <div className="spinner-border text-primary" role="status" />
+                  <p className="text-muted small mt-2">Loading stores...</p>
+                </div>
+              ) : (() => {
+                const displayedStores = storeFilter === 'all'
+                  ? stores
+                  : stores.filter(s => s.status === storeFilter);
+
+                if (displayedStores.length === 0) {
+                  return (
+                    <div className="text-center py-5 text-muted">
+                      <div className="display-5 text-secondary mb-2">🏪</div>
+                      <h5 className="fw-bold text-dark">No Stores Found</h5>
+                      <p className="small text-muted mb-0">No stores match the selected status category ({storeFilter}).</p>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="table-responsive">
+                    <table className="table table-hover align-middle mb-0">
+                      <thead className="table-light">
+                        <tr>
+                          <th>Store</th>
+                          <th>Owner / Seller</th>
+                          <th>Created Date</th>
+                          <th>Status</th>
+                          <th className="text-end">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {displayedStores.map((store) => (
+                          <tr key={store._id}>
+                            <td>
+                              <div className="d-flex align-items-center gap-2">
+                                {store.logo ? (
+                                  <img src={store.logo} alt={store.name} className="rounded-circle border" style={{ width: 36, height: 36, objectFit: 'cover' }} />
+                                ) : (
+                                  <div className="bg-primary text-white rounded-circle d-flex align-items-center justify-content-center fw-bold small" style={{ width: 36, height: 36, background: '#4F46E5' }}>
+                                    {store.name?.charAt(0) || 'S'}
+                                  </div>
+                                )}
+                                <div>
+                                  <div className="fw-semibold text-dark">{store.name}</div>
+                                  <div className="small text-muted text-truncate" style={{ maxWidth: 200, fontSize: 11 }}>{store.description || 'No description'}</div>
+                                </div>
+                              </div>
+                            </td>
+                            <td>
+                              {store.owner ? (
+                                <div>
+                                  <div className="fw-semibold text-dark">{store.owner.firstName} {store.owner.lastName}</div>
+                                  <div className="small text-muted">{store.owner.email}</div>
+                                </div>
+                              ) : (
+                                <span className="text-muted small">N/A</span>
+                              )}
+                            </td>
+                            <td className="small text-muted">
+                              {store.createdAt ? new Date(store.createdAt).toLocaleDateString(undefined, {
+                                year: 'numeric',
+                                month: 'short',
+                                day: 'numeric'
+                              }) : 'N/A'}
+                            </td>
+                            <td>
+                              <span className={`badge ${store.status === 'active' ? 'bg-success' : store.status === 'suspended' ? 'bg-warning text-dark' : 'bg-danger'} px-2 py-1`}>
+                                {store.status || 'active'}
+                              </span>
+                            </td>
+                            <td className="text-end">
+                              <div className="d-flex justify-content-end gap-2">
+                                <button
+                                  className="btn btn-sm btn-outline-secondary rounded-pill px-3 d-inline-flex align-items-center gap-1"
+                                  onClick={() => handleViewStoreDetails(store._id)}
+                                  title="View Store Details"
+                                >
+                                  <FiEye size={14} /> View
+                                </button>
+
+                                {store.status !== 'active' && (
+                                  <button
+                                    className="btn btn-sm btn-success rounded-pill px-3 d-inline-flex align-items-center gap-1"
+                                    onClick={() => handleStoreStatusChange(store._id, 'active')}
+                                    disabled={storeActionLoadingId === store._id}
+                                  >
+                                    {storeActionLoadingId === store._id ? (
+                                      <span className="spinner-border spinner-border-sm" role="status" />
+                                    ) : (
+                                      <>
+                                        <FiCheck size={14} /> Activate
+                                      </>
+                                    )}
+                                  </button>
+                                )}
+
+                                {store.status !== 'suspended' && (
+                                  <button
+                                    className="btn btn-sm btn-outline-warning text-dark rounded-pill px-3 d-inline-flex align-items-center gap-1"
+                                    onClick={() => handleStoreStatusChange(store._id, 'suspended')}
+                                    disabled={storeActionLoadingId === store._id}
+                                  >
+                                    {storeActionLoadingId === store._id ? (
+                                      <span className="spinner-border spinner-border-sm" role="status" />
+                                    ) : (
+                                      <>
+                                        <FiAlertTriangle size={14} /> Suspend
+                                      </>
+                                    )}
+                                  </button>
+                                )}
+
+                                {store.status !== 'closed' && (
+                                  <button
+                                    className="btn btn-sm btn-outline-danger rounded-pill px-3 d-inline-flex align-items-center gap-1"
+                                    onClick={() => handleStoreStatusChange(store._id, 'closed')}
+                                    disabled={storeActionLoadingId === store._id}
+                                  >
+                                    {storeActionLoadingId === store._id ? (
+                                      <span className="spinner-border spinner-border-sm" role="status" />
+                                    ) : (
+                                      <>
+                                        <FiSlash size={14} /> Close
+                                      </>
+                                    )}
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
+          {/* Store Details Modal */}
+          {selectedStore && (
+            <div className="modal fade show d-block" tabIndex="-1" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+              <div className="modal-dialog modal-dialog-centered">
+                <div className="modal-content rounded-4 border-0 shadow">
+                  <div className="modal-header border-bottom-0 pb-0">
+                    <h5 className="modal-title fw-bold text-dark">Store Details</h5>
+                    <button type="button" className="btn-close" onClick={() => setSelectedStore(null)} />
+                  </div>
+                  <div className="modal-body p-4">
+                    <div className="d-flex align-items-center gap-3 mb-4">
+                      {selectedStore.logo ? (
+                        <img src={selectedStore.logo} alt={selectedStore.name} className="rounded-circle border shadow-sm" style={{ width: 64, height: 64, objectFit: 'cover' }} />
+                      ) : (
+                        <div className="bg-primary text-white rounded-circle d-flex align-items-center justify-content-center fw-bold fs-3 shadow-sm" style={{ width: 64, height: 64, background: '#4F46E5' }}>
+                          {selectedStore.name?.charAt(0) || 'S'}
+                        </div>
+                      )}
+                      <div>
+                        <h4 className="fw-bold mb-0">{selectedStore.name}</h4>
+                        <span className={`badge ${selectedStore.status === 'active' ? 'bg-success' : selectedStore.status === 'suspended' ? 'bg-warning text-dark' : 'bg-danger'}`}>
+                          {selectedStore.status}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="mb-3">
+                      <label className="text-muted small d-block">Description</label>
+                      <p className="text-dark bg-light p-3 rounded border small mb-0">{selectedStore.description || 'No description provided.'}</p>
+                    </div>
+
+                    <div className="bg-light p-3 rounded-3 mb-4 border">
+                      <div className="row g-3 small">
+                        <div className="col-12">
+                          <span className="text-muted d-block fw-semibold text-uppercase" style={{ fontSize: 10 }}>Store Owner Information</span>
+                          {selectedStore.owner ? (
+                            <div className="mt-1">
+                              <div className="fw-bold text-dark">{selectedStore.owner.firstName} {selectedStore.owner.lastName}</div>
+                              <div className="text-muted">{selectedStore.owner.email}</div>
+                              {selectedStore.owner.phone && <div className="text-muted">Phone: {selectedStore.owner.phone}</div>}
+                              <span className={`badge mt-1 ${selectedStore.owner.status === 'active' ? 'bg-success' : 'bg-danger'}`}>
+                                Host Account: {selectedStore.owner.status}
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="text-muted">Owner data not available</span>
+                          )}
+                        </div>
+
+                        <div className="col-12 border-top pt-2">
+                          <span className="text-muted d-block">Store ID</span>
+                          <code className="text-dark bg-white p-1 rounded border d-inline-block">{selectedStore._id}</code>
+                        </div>
+                        <div className="col-12">
+                          <span className="text-muted d-block">Created On</span>
+                          <span className="fw-bold text-dark">
+                            {selectedStore.createdAt ? new Date(selectedStore.createdAt).toLocaleString() : 'N/A'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="d-flex gap-2 justify-content-end flex-wrap">
+                      {selectedStore.status !== 'active' && (
+                        <button
+                          className="btn btn-success rounded-pill px-3 fw-bold"
+                          onClick={() => handleStoreStatusChange(selectedStore._id, 'active')}
+                          disabled={storeActionLoadingId === selectedStore._id}
+                        >
+                          Activate Store
+                        </button>
+                      )}
+                      {selectedStore.status !== 'suspended' && (
+                        <button
+                          className="btn btn-warning text-dark rounded-pill px-3 fw-bold"
+                          onClick={() => handleStoreStatusChange(selectedStore._id, 'suspended')}
+                          disabled={storeActionLoadingId === selectedStore._id}
+                        >
+                          Suspend Store
+                        </button>
+                      )}
+                      {selectedStore.status !== 'closed' && (
+                        <button
+                          className="btn btn-outline-danger rounded-pill px-3 fw-bold"
+                          onClick={() => handleStoreStatusChange(selectedStore._id, 'closed')}
+                          disabled={storeActionLoadingId === selectedStore._id}
+                        >
+                          Close Store
+                        </button>
+                      )}
+                      <button className="btn btn-light rounded-pill px-3" onClick={() => setSelectedStore(null)}>
+                        Close
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
+          )}
 
-function ComingSoon({ tab }) {
-  return (
-    <div className="empty-state">
-      <span className="empty-state-icon">🚧</span>
-      <h3 className="empty-state-title" style={{ textTransform: 'capitalize' }}>{tab.replace(/-/g, ' ')}</h3>
-      <p className="empty-state-text">Under development. Check back soon.</p>
-    </div>
+          {/* TAB 4: PRODUCTS VIEW */}
+          {activeTab === 'products' && (
+            <div className="card border-0 shadow-sm rounded-4 p-4 bg-white">
+              <div className="d-flex flex-column flex-md-row align-items-md-center justify-content-between mb-4 gap-2">
+                <div>
+                  <h5 className="fw-bold text-dark mb-1">Marketplace Product Catalog ({products.length})</h5>
+                  <p className="small text-muted mb-0">Inspect product listings across all registered stores, verify seller details, and manage listing statuses.</p>
+                </div>
+                <button
+                  className="btn btn-outline-secondary btn-sm rounded-pill d-flex align-items-center gap-1 align-self-start align-self-md-auto"
+                  onClick={fetchProducts}
+                  disabled={loadingProducts}
+                >
+                  <FiRefreshCw className={loadingProducts ? 'spin' : ''} /> Refresh Products
+                </button>
+              </div>
+
+              {/* Status Filters */}
+              <div className="d-flex gap-2 mb-4 flex-wrap">
+                {[
+                  { key: 'all', label: `All Products (${products.length})` },
+                  { key: 'active', label: `Active (${products.filter(p => p.status === 'active').length})` },
+                  { key: 'inactive', label: `Inactive (${products.filter(p => p.status === 'inactive').length})` },
+                  { key: 'out_of_stock', label: `Out of Stock (${products.filter(p => p.stock === 0 || p.status === 'out_of_stock').length})` },
+                ].map(filter => (
+                  <button
+                    key={filter.key}
+                    className={`btn btn-sm rounded-pill px-3 fw-semibold ${productFilter === filter.key ? 'btn-primary' : 'btn-light text-dark border'}`}
+                    style={productFilter === filter.key ? { background: '#4F46E5', borderColor: '#4F46E5' } : {}}
+                    onClick={() => setProductFilter(filter.key)}
+                  >
+                    {filter.label}
+                  </button>
+                ))}
+              </div>
+
+              {loadingProducts ? (
+                <div className="text-center py-5">
+                  <div className="spinner-border text-primary" role="status" />
+                  <p className="text-muted small mt-2">Loading marketplace products...</p>
+                </div>
+              ) : (() => {
+                const displayedProducts = productFilter === 'all'
+                  ? products
+                  : productFilter === 'out_of_stock'
+                    ? products.filter(p => p.stock === 0 || p.status === 'out_of_stock')
+                    : products.filter(p => p.status === productFilter);
+
+                if (displayedProducts.length === 0) {
+                  return (
+                    <div className="text-center py-5 text-muted">
+                      <div className="display-5 text-secondary mb-2">📦</div>
+                      <h5 className="fw-bold text-dark">No Products Found</h5>
+                      <p className="small text-muted mb-0">No items match the selected product filter ({productFilter}).</p>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="table-responsive">
+                    <table className="table table-hover align-middle mb-0">
+                      <thead className="table-light">
+                        <tr>
+                          <th>Product</th>
+                          <th>Store & Seller</th>
+                          <th>Category</th>
+                          <th>Price</th>
+                          <th>Stock</th>
+                          <th>Status</th>
+                          <th className="text-end">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {displayedProducts.map((p) => (
+                          <tr key={p._id}>
+                            <td>
+                              <div className="d-flex align-items-center gap-2">
+                                {p.images && p.images.length > 0 ? (
+                                  <img src={p.images[0]} alt={p.name} className="rounded border" style={{ width: 42, height: 42, objectFit: 'cover' }} />
+                                ) : (
+                                  <div className="bg-light text-muted rounded d-flex align-items-center justify-content-center border" style={{ width: 42, height: 42 }}>
+                                    <FiPackage size={20} />
+                                  </div>
+                                )}
+                                <div>
+                                  <div className="fw-semibold text-dark">{p.name}</div>
+                                  <div className="small text-muted" style={{ fontSize: 11 }}>SKU: {p.sku || 'N/A'}</div>
+                                </div>
+                              </div>
+                            </td>
+                            <td>
+                              <div>
+                                <div className="fw-semibold text-dark">{p.store?.storeName || 'Store N/A'}</div>
+                                {p.seller && (
+                                  <div className="small text-muted">{p.seller.firstName} {p.seller.lastName}</div>
+                                )}
+                              </div>
+                            </td>
+                            <td>
+                              <span className="badge bg-light text-dark border">
+                                {p.category?.name || 'Uncategorized'}
+                              </span>
+                            </td>
+                            <td>
+                              <div className="fw-bold text-dark">{formatPrice(p.finalPrice)}</div>
+                              {p.discount > 0 && (
+                                <div className="small text-success" style={{ fontSize: 11 }}>{p.discount}% OFF</div>
+                              )}
+                            </td>
+                            <td>
+                              <span className={`fw-semibold ${p.stock === 0 ? 'text-danger' : 'text-dark'}`}>
+                                {p.stock}
+                              </span>
+                            </td>
+                            <td>
+                              <span className={`badge ${p.status === 'active' ? 'bg-success' : p.status === 'out_of_stock' ? 'bg-warning text-dark' : 'bg-secondary'} px-2 py-1`}>
+                                {p.status}
+                              </span>
+                            </td>
+                            <td className="text-end">
+                              <div className="d-flex justify-content-end gap-2">
+                                <button
+                                  className="btn btn-sm btn-outline-secondary rounded-pill px-3 d-inline-flex align-items-center gap-1"
+                                  onClick={() => handleViewProductDetails(p._id)}
+                                  title="View Product Details"
+                                >
+                                  <FiEye size={14} /> View
+                                </button>
+
+                                {p.status !== 'active' ? (
+                                  <button
+                                    className="btn btn-sm btn-success rounded-pill px-3 d-inline-flex align-items-center gap-1"
+                                    onClick={() => handleProductStatusChange(p._id, 'active')}
+                                    disabled={productActionLoadingId === p._id || p.stock === 0}
+                                    title={p.stock === 0 ? 'Cannot activate out-of-stock product' : 'Activate Product'}
+                                  >
+                                    {productActionLoadingId === p._id ? (
+                                      <span className="spinner-border spinner-border-sm" role="status" />
+                                    ) : (
+                                      <>
+                                        <FiCheck size={14} /> Activate
+                                      </>
+                                    )}
+                                  </button>
+                                ) : (
+                                  <button
+                                    className="btn btn-sm btn-outline-danger rounded-pill px-3 d-inline-flex align-items-center gap-1"
+                                    onClick={() => handleProductStatusChange(p._id, 'inactive')}
+                                    disabled={productActionLoadingId === p._id}
+                                  >
+                                    {productActionLoadingId === p._id ? (
+                                      <span className="spinner-border spinner-border-sm" role="status" />
+                                    ) : (
+                                      <>
+                                        <FiX size={14} /> Deactivate
+                                      </>
+                                    )}
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
+          {/* Admin Product Details Inspection Modal */}
+          {selectedProduct && (
+            <div className="modal fade show d-block" tabIndex="-1" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+              <div className="modal-dialog modal-dialog-centered modal-lg">
+                <div className="modal-content rounded-4 border-0 shadow">
+                  <div className="modal-header border-bottom-0 pb-0">
+                    <h5 className="modal-title fw-bold text-dark">Admin Product Moderation View</h5>
+                    <button type="button" className="btn-close" onClick={() => setSelectedProduct(null)} />
+                  </div>
+                  <div className="modal-body p-4">
+                    <div className="row g-4">
+                      {/* Product Image preview */}
+                      <div className="col-12 col-md-5">
+                        {selectedProduct.images && selectedProduct.images.length > 0 ? (
+                          <div>
+                            <img
+                              src={selectedProduct.images[0]}
+                              alt={selectedProduct.name}
+                              className="img-fluid rounded-3 border mb-2 shadow-sm w-100"
+                              style={{ maxHeight: 250, objectFit: 'cover' }}
+                            />
+                            <div className="d-flex gap-2 flex-wrap">
+                              {selectedProduct.images.map((img, idx) => (
+                                <img
+                                  key={idx}
+                                  src={img}
+                                  alt=""
+                                  className="rounded border"
+                                  style={{ width: 48, height: 48, objectFit: 'cover' }}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="bg-light rounded-3 p-5 text-center text-muted border">
+                            <FiPackage size={48} />
+                            <p className="small mb-0 mt-2">No product images uploaded</p>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Product Info */}
+                      <div className="col-12 col-md-7">
+                        <div className="d-flex justify-content-between align-items-start mb-2">
+                          <h4 className="fw-bold text-dark mb-0">{selectedProduct.name}</h4>
+                          <span className={`badge ${selectedProduct.status === 'active' ? 'bg-success' : selectedProduct.status === 'out_of_stock' ? 'bg-warning text-dark' : 'bg-secondary'}`}>
+                            {selectedProduct.status}
+                          </span>
+                        </div>
+
+                        <div className="d-flex align-items-center gap-2 mb-3">
+                          <span className="fs-4 fw-bold text-primary" style={{ color: '#4F46E5' }}>{formatPrice(selectedProduct.finalPrice)}</span>
+                          {selectedProduct.discount > 0 && (
+                            <>
+                              <span className="text-muted text-decoration-line-through small">{formatPrice(selectedProduct.price)}</span>
+                              <span className="badge bg-danger-subtle text-danger">{selectedProduct.discount}% OFF</span>
+                            </>
+                          )}
+                        </div>
+
+                        <div className="bg-light p-3 rounded-3 mb-3 border">
+                          <div className="row g-2 small">
+                            <div className="col-6">
+                              <span className="text-muted d-block">Category</span>
+                              <span className="fw-semibold text-dark">{selectedProduct.category?.name || 'N/A'}</span>
+                            </div>
+                            <div className="col-6">
+                              <span className="text-muted d-block">Current Stock</span>
+                              <span className={`fw-bold ${selectedProduct.stock === 0 ? 'text-danger' : 'text-dark'}`}>{selectedProduct.stock} units</span>
+                            </div>
+                            <div className="col-6">
+                              <span className="text-muted d-block">SKU</span>
+                              <code className="text-dark bg-white px-1 rounded border">{selectedProduct.sku || 'N/A'}</code>
+                            </div>
+                            <div className="col-6">
+                              <span className="text-muted d-block">Brand</span>
+                              <span className="fw-semibold text-dark">{selectedProduct.brand || 'N/A'}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Store & Seller Details */}
+                        <div className="bg-light p-3 rounded-3 mb-3 border">
+                          <div className="fw-semibold text-dark mb-2 text-uppercase small" style={{ fontSize: 11 }}>Store & Seller Profile</div>
+                          <div className="row g-2 small">
+                            <div className="col-6">
+                              <span className="text-muted d-block">Store Name</span>
+                              <span className="fw-bold text-dark">{selectedProduct.store?.storeName || 'N/A'}</span>
+                            </div>
+                            <div className="col-6">
+                              <span className="text-muted d-block">Store Status</span>
+                              <span className={`badge ${selectedProduct.store?.status === 'active' ? 'bg-success' : 'bg-warning text-dark'}`}>
+                                {selectedProduct.store?.status || 'N/A'}
+                              </span>
+                            </div>
+                            <div className="col-12 border-top pt-2">
+                              <span className="text-muted d-block">Seller Name</span>
+                              <span className="fw-bold text-dark">
+                                {selectedProduct.seller ? `${selectedProduct.seller.firstName} ${selectedProduct.seller.lastName}` : 'N/A'}
+                              </span>
+                              {selectedProduct.seller?.email && (
+                                <span className="text-muted d-block">{selectedProduct.seller.email}</span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="mb-3">
+                          <span className="text-muted small d-block mb-1 fw-semibold">Description</span>
+                          <p className="small text-secondary bg-light p-3 rounded border mb-0" style={{ maxHeight: 120, overflowY: 'auto' }}>
+                            {selectedProduct.description || 'No description provided.'}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="d-flex gap-2 justify-content-end mt-4 border-top pt-3">
+                      {selectedProduct.status !== 'active' ? (
+                        <button
+                          className="btn btn-success rounded-pill px-4 fw-bold"
+                          onClick={() => handleProductStatusChange(selectedProduct._id, 'active')}
+                          disabled={productActionLoadingId === selectedProduct._id || selectedProduct.stock === 0}
+                        >
+                          Activate Product Listing
+                        </button>
+                      ) : (
+                        <button
+                          className="btn btn-outline-danger rounded-pill px-4 fw-bold"
+                          onClick={() => handleProductStatusChange(selectedProduct._id, 'inactive')}
+                          disabled={productActionLoadingId === selectedProduct._id}
+                        >
+                          Deactivate Product Listing
+                        </button>
+                      )}
+                      <button className="btn btn-light rounded-pill px-4" onClick={() => setSelectedProduct(null)}>
+                        Close
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 5: ORDERS & REVENUE */}
+          {activeTab === 'orders' && (
+            <div className="card border-0 shadow-sm rounded-4 p-5 text-center bg-white">
+              <div className="display-4 text-muted mb-3">📊</div>
+              <h4 className="fw-bold text-dark">Platform Orders & Revenue API Pending</h4>
+              <p className="text-muted small">
+                Admin order aggregate reporting endpoints will be integrated once order processing APIs are added to the backend.
+              </p>
+              <div className="badge bg-warning text-dark px-3 py-2 rounded-pill mx-auto mt-2">
+                Backend Integration Pending
+              </div>
+            </div>
+          )}
+
+        </div>
+      </div>
+      <Footer />
+    </>
   );
 }
