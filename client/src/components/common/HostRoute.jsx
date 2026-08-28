@@ -20,19 +20,14 @@ export default function HostRoute({ children }) {
     return <Navigate to="/login?redirect=/seller" replace />;
   }
 
+  // Admin user -> Redirect to Admin Dashboard
+  if (user?.role === 'admin') {
+    return <Navigate to="/admin" replace />;
+  }
+
+  // Customer user (or non-host role) -> Redirect to Customer Dashboard
   if (user?.role !== 'host') {
-    return (
-      <>
-        <Navbar />
-        <div className="container py-5 my-5 text-center">
-          <div className="alert alert-danger p-4 d-inline-block shadow-sm rounded-3">
-            <h4 className="alert-heading fw-bold">Access Denied</h4>
-            <p className="mb-0">You need a <strong>Host / Seller</strong> account to view this page.</p>
-          </div>
-        </div>
-        <Footer />
-      </>
-    );
+    return <Navigate to="/dashboard" replace />;
   }
 
   if (user?.status === 'pending') {

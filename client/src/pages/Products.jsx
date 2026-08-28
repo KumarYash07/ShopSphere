@@ -65,6 +65,19 @@ export default function Products() {
     loadCategories();
   }, []);
 
+  // Helper to resolve category parameter (whether passed as _id, slug, or name) to backend category _id
+  const resolveCategoryId = useCallback((catVal) => {
+    if (!catVal) return null;
+    const byId = categories.find(c => String(c._id) === String(catVal));
+    if (byId) return byId._id;
+    const lowerVal = String(catVal).toLowerCase();
+    const byNameOrSlug = categories.find(
+      c => c.slug?.toLowerCase() === lowerVal || c.name?.toLowerCase() === lowerVal
+    );
+    if (byNameOrSlug) return byNameOrSlug._id;
+    return catVal;
+  }, [categories]);
+
   // Fetch products from backend API
   const fetchProducts = useCallback(async () => {
     setLoading(true);
@@ -72,7 +85,10 @@ export default function Products() {
     try {
       const params = {};
       if (searchQuery) params.search = searchQuery;
-      if (selectedCategory) params.category = selectedCategory;
+      if (selectedCategory) {
+        const resolvedId = resolveCategoryId(selectedCategory);
+        if (resolvedId) params.category = resolvedId;
+      }
       if (sortOption) params.sort = sortOption;
       if (selectedPriceRange) {
         params.minPrice = selectedPriceRange.min;
@@ -93,7 +109,7 @@ export default function Products() {
     } finally {
       setLoading(false);
     }
-  }, [searchQuery, selectedCategory, sortOption, selectedPriceRange]);
+  }, [searchQuery, selectedCategory, sortOption, selectedPriceRange, resolveCategoryId]);
 
   useEffect(() => {
     fetchProducts();

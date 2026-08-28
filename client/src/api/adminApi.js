@@ -108,6 +108,47 @@ export const updateProductStatusByAdminApi = async (id, status) => {
   return response.data;
 };
 
+/**
+ * Fetch all platform orders for admin management
+ * @returns {Promise<{success: boolean, count: number, orders: Array}>}
+ */
+export const getAllOrdersAdminApi = async () => {
+  const response = await api.get('/admin/orders');
+  return response.data;
+};
+
+/**
+ * Fetch platform revenue statistics and order status aggregates
+ * @returns {Promise<{success: boolean, revenue: Object, orders: Object, payments: Object}>}
+ */
+export const getRevenueStatsAdminApi = async () => {
+  const response = await api.get('/admin/orders/revenue');
+  return response.data;
+};
+
+/**
+ * Fetch details of a specific order for admin inspection
+ * @param {string} id - Order ID
+ * @returns {Promise<{success: boolean, order: Object}>}
+ */
+export const getAdminOrderByIdApi = async (id) => {
+  const response = await api.get(`/admin/orders/${id}`);
+  return response.data;
+};
+
+/**
+ * Update order status by admin
+ * @param {string} id - Order ID
+ * @param {string} orderStatus - New order status ('pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled')
+ * @param {string} [cancellationReason] - Optional cancellation reason
+ * @returns {Promise<{success: boolean, message: string, order: Object}>}
+ */
+export const updateOrderStatusAdminApi = async (id, orderStatus, cancellationReason = '') => {
+  const response = await api.put(`/admin/orders/${id}/status`, { orderStatus, cancellationReason });
+  return response.data;
+};
+
+
 
 
 

@@ -9,6 +9,7 @@ import {
   updateProductStock,
   updateProductDiscount,
   uploadProductImages,
+  getMyProducts,
 } from "../controllers/productController.js";
 
 import { protect } from "../middleware/authMiddleware.js";
@@ -19,6 +20,15 @@ const router = express.Router();
 
 // Public
 router.get("/", getProducts);
+
+// host my-Products
+router.get(
+  "/my-products",
+  protect,
+  authorize("host"),
+  getMyProducts
+);
+
 router.get("/:id", getProductById);
 
 // Host

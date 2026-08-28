@@ -2,16 +2,17 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import {
   FiGrid, FiPackage, FiPlusCircle, FiShoppingBag, FiSettings,
-  FiEdit, FiTrash2, FiUpload, FiX, FiCheck, FiAlertCircle
+  FiEdit, FiTrash2, FiUpload, FiX, FiCheck, FiAlertCircle, FiRefreshCw, FiEye
 } from 'react-icons/fi';
 import Navbar from '../components/navbar/Navbar';
 import Footer from '../components/footer/Footer';
 import { useAuth } from '../context/AuthContext';
 import { getMyStoreApi, createStoreApi, updateMyStoreApi } from '../api/storeApi';
 import {
-  getProductsApi, createProductApi, updateProductApi, deleteProductApi,
+  getProductsApi, getMyProductsApi, createProductApi, updateProductApi, deleteProductApi,
   updateProductStockApi, updateProductDiscountApi, uploadProductImagesApi
 } from '../api/productApi';
+import { getHostOrdersApi, getHostOrderByIdApi, updateHostOrderStatusApi } from '../api/hostOrderApi';
 import { getCategoriesApi } from '../api/categoryApi';
 import { formatPrice } from '../utils/helpers';
 
@@ -116,23 +117,83 @@ export default function SellerDashboard() {
     }
   };
 
-  // Load Host Products
+  // Host Orders state
+  const [hostOrders, setHostOrders] = useState([]);
+  const [loadingHostOrders, setLoadingHostOrders] = useState(true);
+  const [hostOrderFilter, setHostOrderFilter] = useState('all'); // 'all' | 'confirmed' | 'processing' | 'shipped' | 'delivered'
+  const [selectedHostOrder, setSelectedHostOrder] = useState(null);
+  const [loadingHostOrderDetails, setLoadingHostOrderDetails] = useState(false);
+  const [updatingHostOrderStatusId, setUpdatingHostOrderStatusId] = useState(null);
+  const [newHostOrderStatus, setNewHostOrderStatus] = useState('');
+
+  // Load Host Products via /api/products/my-products
   const fetchMyProducts = async () => {
     setLoadingProducts(true);
     try {
-      const data = await getProductsApi();
-      if (data.success && data.products) {
-        // Filter products where seller ID matches current host ID
-        const myProds = data.products.filter(p => {
-          const sellerId = p.seller?._id || p.seller;
-          return String(sellerId) === String(user?.id || user?._id);
-        });
-        setProducts(myProds);
+      const data = await getMyProductsApi();
+      if (data.success && Array.isArray(data.products)) {
+        setProducts(data.products);
       }
     } catch (err) {
       console.error('Failed to load host products:', err);
     } finally {
       setLoadingProducts(false);
+    }
+  };
+
+  // Load Host Store Orders via /api/host/orders
+  const fetchHostOrders = async () => {
+    setLoadingHostOrders(true);
+    try {
+      const data = await getHostOrdersApi();
+      if (data.success && Array.isArray(data.orders)) {
+        setHostOrders(data.orders);
+      }
+    } catch (err) {
+      console.error('Failed to load host store orders:', err);
+    } finally {
+      setLoadingHostOrders(false);
+    }
+  };
+
+  // Fetch Detailed Host Order Info
+  const handleViewHostOrderDetails = async (orderId) => {
+    setLoadingHostOrderDetails(true);
+    try {
+      const data = await getHostOrderByIdApi(orderId);
+      if (data.success && data.order) {
+        setSelectedHostOrder(data.order);
+        setNewHostOrderStatus(data.order.orderStatus || 'confirmed');
+      }
+    } catch (err) {
+      console.error('Failed to fetch host order details:', err);
+      showToast('danger', err.response?.data?.message || 'Failed to load order details.');
+    } finally {
+      setLoadingHostOrderDetails(false);
+    }
+  };
+
+  // Update Host Order Status ('confirmed', 'processing', 'shipped', 'delivered')
+  const handleUpdateHostOrderStatusSubmit = async (orderId, targetStatus) => {
+    if (!orderId || !targetStatus) return;
+    setUpdatingHostOrderStatusId(orderId);
+    try {
+      const data = await updateHostOrderStatusApi(orderId, targetStatus);
+      if (data.success) {
+        showToast('success', data.message || `Order status updated to ${targetStatus}.`);
+        fetchHostOrders();
+        if (selectedHostOrder && selectedHostOrder._id === orderId) {
+          setSelectedHostOrder(prev => prev ? {
+            ...prev,
+            orderStatus: targetStatus,
+            deliveredAt: targetStatus === 'delivered' ? new Date() : prev.deliveredAt,
+          } : null);
+        }
+      }
+    } catch (err) {
+      showToast('danger', err.response?.data?.message || 'Failed to update order status.');
+    } finally {
+      setUpdatingHostOrderStatusId(null);
     }
   };
 
@@ -152,6 +213,7 @@ export default function SellerDashboard() {
     fetchMyStore();
     fetchMyProducts();
     fetchCategories();
+    fetchHostOrders();
   }, []);
 
   const showToast = (type, message) => {
@@ -354,7 +416,7 @@ export default function SellerDashboard() {
               { id: 'store', label: 'My Store', icon: FiSettings },
               { id: 'products', label: 'Products List', icon: FiPackage },
               { id: 'add-product', label: editingProduct ? 'Edit Product' : 'Add Product', icon: FiPlusCircle },
-              { id: 'orders', label: 'Orders (Pending)', icon: FiShoppingBag },
+              { id: 'orders', label: 'Store Orders', icon: FiShoppingBag },
             ].map(tab => {
               const Icon = tab.icon;
               return (
@@ -940,16 +1002,241 @@ export default function SellerDashboard() {
             </div>
           )}
 
-          {/* TAB 5: ORDERS (COMING SOON) */}
+          {/* TAB 5: HOST STORE ORDERS */}
           {activeTab === 'orders' && (
-            <div className="card border-0 shadow-sm rounded-4 p-5 text-center bg-white">
-              <div className="display-4 text-muted mb-3">🛠️</div>
-              <h4 className="fw-bold text-dark">Order Management API Pending</h4>
-              <p className="text-muted small">
-                Host store order placement and fulfillment APIs are coming soon in the next backend update.
-              </p>
-              <div className="badge bg-warning text-dark px-3 py-2 rounded-pill mx-auto">
-                Backend Integration Pending
+            <div>
+              <div className="card border-0 shadow-sm rounded-4 p-4 bg-white mb-4">
+                <div className="d-flex flex-column flex-md-row align-items-md-center justify-content-between mb-3 gap-2">
+                  <div>
+                    <h5 className="fw-bold text-dark mb-0">Store Customer Orders</h5>
+                    <p className="small text-muted mb-0">Track and fulfill incoming orders containing products from your store.</p>
+                  </div>
+                  <button className="btn btn-outline-primary btn-sm rounded-pill px-3 d-flex align-items-center gap-1" onClick={fetchHostOrders}>
+                    <FiRefreshCw size={14} /> Refresh Orders
+                  </button>
+                </div>
+
+                {/* Filter buttons */}
+                <div className="d-flex gap-2 flex-wrap mb-4">
+                  {[
+                    { id: 'all', label: 'All Orders' },
+                    { id: 'confirmed', label: 'Confirmed' },
+                    { id: 'processing', label: 'Processing' },
+                    { id: 'shipped', label: 'Shipped' },
+                    { id: 'delivered', label: 'Delivered' },
+                  ].map(f => (
+                    <button
+                      key={f.id}
+                      type="button"
+                      className={`btn btn-sm rounded-pill px-3 fw-semibold ${hostOrderFilter === f.id ? 'btn-primary' : 'btn-light text-secondary'}`}
+                      style={hostOrderFilter === f.id ? { background: '#4F46E5', borderColor: '#4F46E5' } : {}}
+                      onClick={() => setHostOrderFilter(f.id)}
+                    >
+                      {f.label} ({f.id === 'all' ? hostOrders.length : hostOrders.filter(o => o.orderStatus === f.id).length})
+                    </button>
+                  ))}
+                </div>
+
+                {/* Orders Table */}
+                {loadingHostOrders ? (
+                  <div className="text-center py-5">
+                    <div className="spinner-border text-primary" role="status" />
+                    <p className="text-muted small mt-2">Loading your store orders...</p>
+                  </div>
+                ) : hostOrders.length === 0 ? (
+                  <div className="text-center py-5 bg-light rounded-4">
+                    <p className="text-muted mb-0">No store orders received yet.</p>
+                  </div>
+                ) : (
+                  <div className="table-responsive">
+                    <table className="table table-hover align-middle mb-0">
+                      <thead className="table-light">
+                        <tr>
+                          <th className="small text-uppercase text-muted">Order #</th>
+                          <th className="small text-uppercase text-muted">Customer</th>
+                          <th className="small text-uppercase text-muted">Date</th>
+                          <th className="small text-uppercase text-muted">Total Amount</th>
+                          <th className="small text-uppercase text-muted">Status</th>
+                          <th className="text-end small text-uppercase text-muted">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {hostOrders
+                          .filter(o => hostOrderFilter === 'all' || o.orderStatus === hostOrderFilter)
+                          .map(order => {
+                            const customerName = order.user ? `${order.user.firstName} ${order.user.lastName}` : 'Customer';
+                            return (
+                              <tr key={order._id}>
+                                <td>
+                                  <span className="fw-bold text-dark font-monospace">{order.orderNumber}</span>
+                                </td>
+                                <td>
+                                  <div className="fw-semibold text-dark">{customerName}</div>
+                                  {order.user?.phone && <span className="text-muted small d-block">{order.user.phone}</span>}
+                                </td>
+                                <td>
+                                  <span className="small text-secondary">
+                                    {order.createdAt ? new Date(order.createdAt).toLocaleDateString() : 'N/A'}
+                                  </span>
+                                </td>
+                                <td>
+                                  <span className="fw-bold text-primary">{formatPrice(order.totalAmount)}</span>
+                                </td>
+                                <td>
+                                  <span className={`badge rounded-pill ${
+                                    order.orderStatus === 'delivered' ? 'bg-success' :
+                                    order.orderStatus === 'cancelled' ? 'bg-danger' :
+                                    order.orderStatus === 'shipped' ? 'bg-info text-dark' :
+                                    order.orderStatus === 'processing' ? 'bg-primary' : 'bg-warning text-dark'
+                                  } px-3 py-2 text-capitalize`}>
+                                    {order.orderStatus}
+                                  </span>
+                                </td>
+                                <td className="text-end">
+                                  <button
+                                    className="btn btn-sm btn-outline-primary rounded-pill px-3 fw-semibold d-inline-flex align-items-center gap-1"
+                                    onClick={() => handleViewHostOrderDetails(order._id)}
+                                  >
+                                    <FiEye size={14} /> View & Update
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* HOST ORDER DETAILS & STATUS UPDATE MODAL */}
+          {selectedHostOrder && (
+            <div className="modal fade show d-block" tabIndex="-1" style={{ backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1060 }}>
+              <div className="modal-dialog modal-dialog-centered modal-lg">
+                <div className="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+                  <div className="modal-header bg-dark text-white py-3">
+                    <h5 className="modal-title fw-bold d-flex align-items-center gap-2">
+                      <FiPackage /> Store Order #{selectedHostOrder.orderNumber}
+                    </h5>
+                    <button type="button" className="btn-close btn-close-white" onClick={() => setSelectedHostOrder(null)} />
+                  </div>
+
+                  <div className="modal-body p-4" style={{ maxHeight: '80vh', overflowY: 'auto' }}>
+                    {/* Status update banner */}
+                    <div className="card border-primary mb-4 bg-primary-subtle rounded-3 p-3">
+                      <h6 className="fw-bold text-primary mb-2">Update Order Status</h6>
+                      <div className="row g-2 align-items-center">
+                        <div className="col-md-6">
+                          <select
+                            className="form-select form-select-sm fw-semibold"
+                            value={newHostOrderStatus}
+                            onChange={(e) => setNewHostOrderStatus(e.target.value)}
+                            disabled={selectedHostOrder.orderStatus === 'cancelled'}
+                          >
+                            <option value="confirmed">confirmed</option>
+                            <option value="processing">processing</option>
+                            <option value="shipped">shipped</option>
+                            <option value="delivered">delivered</option>
+                          </select>
+                        </div>
+                        <div className="col-md-6">
+                          {selectedHostOrder.orderStatus === 'cancelled' ? (
+                            <div className="alert alert-warning py-2 mb-0 small">
+                              ⚠️ Cancelled orders cannot be updated.
+                            </div>
+                          ) : (
+                            <button
+                              className="btn btn-primary btn-sm rounded-pill px-4 fw-bold w-100"
+                              onClick={() => handleUpdateHostOrderStatusSubmit(selectedHostOrder._id, newHostOrderStatus)}
+                              disabled={updatingHostOrderStatusId === selectedHostOrder._id}
+                            >
+                              {updatingHostOrderStatusId === selectedHostOrder._id ? 'Updating...' : 'Update Status'}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="row g-3 mb-4">
+                      {/* Customer Info */}
+                      <div className="col-md-6">
+                        <div className="bg-light p-3 rounded-3 border h-100">
+                          <div className="fw-semibold text-dark mb-2 text-uppercase small" style={{ fontSize: 11 }}>Customer Profile</div>
+                          <div className="fw-bold text-dark">
+                            {selectedHostOrder.user ? `${selectedHostOrder.user.firstName} ${selectedHostOrder.user.lastName}` : 'N/A'}
+                          </div>
+                          <div className="small text-muted">{selectedHostOrder.user?.email}</div>
+                          <div className="small text-muted">{selectedHostOrder.user?.phone}</div>
+                        </div>
+                      </div>
+
+                      {/* Payment & Shipping Summary */}
+                      <div className="col-md-6">
+                        <div className="bg-light p-3 rounded-3 border h-100">
+                          <div className="fw-semibold text-dark mb-2 text-uppercase small" style={{ fontSize: 11 }}>Payment & Status</div>
+                          <div className="small d-flex justify-content-between mb-1">
+                            <span className="text-muted">Payment Method:</span>
+                            <span className="fw-bold text-uppercase">{selectedHostOrder.paymentMethod}</span>
+                          </div>
+                          <div className="small d-flex justify-content-between mb-1">
+                            <span className="text-muted">Payment Status:</span>
+                            <span className={`badge ${selectedHostOrder.paymentStatus === 'paid' ? 'bg-success' : 'bg-secondary'}`}>{selectedHostOrder.paymentStatus}</span>
+                          </div>
+                          <div className="small d-flex justify-content-between">
+                            <span className="text-muted">Total Order Amount:</span>
+                            <span className="fw-bold text-primary">{formatPrice(selectedHostOrder.totalAmount)}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Shipping Address */}
+                    {selectedHostOrder.shippingAddress && (
+                      <div className="bg-light p-3 rounded-3 mb-4 border">
+                        <div className="fw-semibold text-dark mb-1 text-uppercase small" style={{ fontSize: 11 }}>Delivery Address</div>
+                        <div className="small text-secondary">
+                          <strong>{selectedHostOrder.shippingAddress.fullName}</strong> ({selectedHostOrder.shippingAddress.phone})<br />
+                          {selectedHostOrder.shippingAddress.addressLine1}, {selectedHostOrder.shippingAddress.addressLine2 ? selectedHostOrder.shippingAddress.addressLine2 + ', ' : ''}
+                          {selectedHostOrder.shippingAddress.city}, {selectedHostOrder.shippingAddress.state} - {selectedHostOrder.shippingAddress.pincode}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Order Items */}
+                    <div className="mb-3">
+                      <div className="fw-semibold text-dark mb-2 text-uppercase small" style={{ fontSize: 11 }}>Order Items</div>
+                      <div className="list-group list-group-flush rounded-3 border">
+                        {selectedHostOrder.items?.map((item, idx) => (
+                          <div key={idx} className="list-group-item d-flex align-items-center gap-3 py-3">
+                            <img
+                              src={item.productImage || item.product?.images?.[0] || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=100'}
+                              alt={item.productName}
+                              className="rounded-3 object-fit-cover"
+                              style={{ width: 50, height: 50 }}
+                            />
+                            <div className="flex-grow-1">
+                              <div className="fw-bold text-dark small">{item.productName}</div>
+                              <div className="small text-muted">
+                                Qty: {item.quantity} × {formatPrice(item.price)}
+                              </div>
+                            </div>
+                            <div className="fw-bold text-primary small">
+                              {formatPrice(item.total)}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="modal-footer bg-light py-2">
+                    <button className="btn btn-secondary rounded-pill px-4" onClick={() => setSelectedHostOrder(null)}>
+                      Close
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           )}

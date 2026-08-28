@@ -99,6 +99,14 @@ export default function App() {
                   </HostRoute>
                 }
               />
+              <Route
+                path="/host-dashboard/*"
+                element={
+                  <HostRoute>
+                    <SellerDashboard />
+                  </HostRoute>
+                }
+              />
 
               {/* Admin Protected Routes */}
               <Route

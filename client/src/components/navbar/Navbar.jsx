@@ -285,10 +285,22 @@ export default function Navbar() {
                           </span>
                         </div>
 
-                        <Link to={getDashboardPath()} className="d-flex align-items-center gap-2 p-2 text-decoration-none text-dark rounded-2 hover-bg-light" onClick={() => setShowProfile(false)}>
-                          <FiGrid className="text-primary" /> Dashboard
-                        </Link>
-                        <Link to="/dashboard?tab=orders" className="d-flex align-items-center gap-2 p-2 text-decoration-none text-dark rounded-2 hover-bg-light" onClick={() => setShowProfile(false)}>
+                        {userRole === 'admin' && (
+                          <Link to="/admin" className="d-flex align-items-center gap-2 p-2 text-decoration-none text-dark rounded-2 hover-bg-light" onClick={() => setShowProfile(false)}>
+                            <FiGrid className="text-danger" /> Admin Control Panel
+                          </Link>
+                        )}
+                        {userRole === 'host' && (
+                          <Link to="/seller" className="d-flex align-items-center gap-2 p-2 text-decoration-none text-dark rounded-2 hover-bg-light" onClick={() => setShowProfile(false)}>
+                            <FiGrid className="text-warning" /> Seller Dashboard
+                          </Link>
+                        )}
+                        {userRole !== 'admin' && userRole !== 'host' && (
+                          <Link to="/dashboard" className="d-flex align-items-center gap-2 p-2 text-decoration-none text-dark rounded-2 hover-bg-light" onClick={() => setShowProfile(false)}>
+                            <FiGrid className="text-primary" /> Customer Dashboard
+                          </Link>
+                        )}
+                        <Link to="/orders" className="d-flex align-items-center gap-2 p-2 text-decoration-none text-dark rounded-2 hover-bg-light" onClick={() => setShowProfile(false)}>
                           <FiPackage className="text-primary" /> My Orders
                         </Link>
                         <Link to="/dashboard?tab=profile" className="d-flex align-items-center gap-2 p-2 text-decoration-none text-dark rounded-2 hover-bg-light" onClick={() => setShowProfile(false)}>

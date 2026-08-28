@@ -9,11 +9,14 @@ const api = axios.create({
   },
 });
 
-// Request Interceptor to attach JWT token
+// Request Interceptor to attach JWT token (except for unauthenticated auth endpoints)
 api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('ss_token');
-    if (token) {
+    const requestUrl = config.url || '';
+    const isAuthEndpoint = requestUrl.includes('/auth/login') || requestUrl.includes('/auth/register');
+
+    if (token && !isAuthEndpoint) {
       config.headers.Authorization = `Bearer ${token}`;
     }
     return config;
@@ -26,15 +29,16 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     const status = error.response?.status;
+    const requestUrl = error.config?.url || '';
+    const isAuthEndpoint = requestUrl.includes('/auth/login') || requestUrl.includes('/auth/register');
     const message = error.response?.data?.message || 'An unexpected error occurred.';
 
-    if (status === 401) {
-      // Token expired or invalid
+    if (status === 401 && !isAuthEndpoint) {
+      // Token expired or invalid for authenticated API requests
       const currentPath = window.location.pathname;
       if (currentPath !== '/login' && currentPath !== '/register' && currentPath !== '/verify-email') {
         localStorage.removeItem('ss_token');
         localStorage.removeItem('ss_user');
-        // Dispatch custom event or handle token expiry gracefully
         window.dispatchEvent(new CustomEvent('auth:unauthorized', { detail: message }));
       }
     } else if (status === 403) {

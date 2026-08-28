@@ -29,8 +29,8 @@ export default function MegaMenu({ categories }) {
       </div>
       {categories.map(cat => (
         <Link
-          key={cat.id}
-          to={`/products?category=${cat.name}`}
+          key={cat._id || cat.id}
+          to={`/products?category=${cat._id || cat.id || cat.name}`}
           style={{
             display: 'flex', alignItems: 'center', gap: 12,
             padding: '10px 12px', borderRadius: 'var(--radius-md)',
@@ -42,16 +42,19 @@ export default function MegaMenu({ categories }) {
         >
           <div style={{
             width: 36, height: 36,
-            background: cat.color + '15',
+            background: (cat.color || '#4F46E5') + '15',
             borderRadius: 10,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 18, flexShrink: 0,
+            fontSize: 16, fontWeight: 'bold', flexShrink: 0,
+            color: cat.color || '#4F46E5',
           }}>
-            {cat.icon}
+            {cat.icon || cat.name?.charAt(0).toUpperCase()}
           </div>
           <div>
             <div style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.3 }}>{cat.name}</div>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{cat.productCount.toLocaleString()} Products</div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+              {cat.productCount !== undefined ? `${cat.productCount.toLocaleString()} Products` : (cat.description || 'Explore collection')}
+            </div>
           </div>
         </Link>
       ))}

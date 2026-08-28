@@ -1,5 +1,8 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { loginApi, registerApi, verifyEmailApi, getProfileApi } from '../api/authApi';
+import {
+  loginApi, registerApi, verifyEmailApi, getProfileApi, updateProfileApi,
+  requestEmailChangeApi, verifyEmailChangeApi
+} from '../api/authApi';
 
 const AuthContext = createContext(null);
 
@@ -63,7 +66,11 @@ export function AuthProvider({ children }) {
   const login = async (email, password) => {
     setAuthError(null);
     try {
-      const data = await loginApi({ email, password });
+      const payload = {
+        email: String(email || '').trim(),
+        password: String(password || ''),
+      };
+      const data = await loginApi(payload);
       if (data.success && data.token) {
         localStorage.setItem('ss_token', data.token);
         localStorage.setItem('ss_user', JSON.stringify(data.user));
@@ -72,9 +79,17 @@ export function AuthProvider({ children }) {
         closeAuth();
         return { success: true, user: data.user, token: data.token, message: data.message };
       }
-      return { success: false, error: data.message || 'Login failed' };
+      const errorMsg = data.message || 'Login failed';
+      setAuthError(errorMsg);
+      return { success: false, error: errorMsg };
     } catch (err) {
-      const message = err.response?.data?.message || 'Login failed. Please check your credentials.';
+      console.error('Login API error:', err.response || err);
+      let message = 'Unable to connect to server. Please make sure the backend is running.';
+      if (err.response?.data?.message) {
+        message = err.response.data.message;
+      } else if (err.response) {
+        message = `Server error (${err.response.status}). Please try again later.`;
+      }
       setAuthError(message);
       return { success: false, error: message };
     }
@@ -114,6 +129,49 @@ export function AuthProvider({ children }) {
   const openRegister = () => { setShowRegister(true); setShowLogin(false); };
   const closeAuth = () => { setShowLogin(false); setShowRegister(false); };
 
+  const updateUserProfile = async (formData) => {
+    setAuthError(null);
+    try {
+      const data = await updateProfileApi(formData);
+      if (data.success && data.user) {
+        setUser(data.user);
+        localStorage.setItem('ss_user', JSON.stringify(data.user));
+        return { success: true, user: data.user, message: data.message };
+      }
+      return { success: false, error: data.message || 'Failed to update profile' };
+    } catch (err) {
+      const message = err.response?.data?.message || 'Failed to update profile. Please try again.';
+      setAuthError(message);
+      return { success: false, error: message };
+    }
+  };
+
+  const requestEmailChange = async (newEmail) => {
+    setAuthError(null);
+    try {
+      const data = await requestEmailChangeApi({ newEmail });
+      return data;
+    } catch (err) {
+      const message = err.response?.data?.message || 'Failed to request email change.';
+      return { success: false, message };
+    }
+  };
+
+  const verifyEmailChange = async (newEmail, otp) => {
+    setAuthError(null);
+    try {
+      const data = await verifyEmailChangeApi({ newEmail, otp });
+      if (data.success && data.user) {
+        setUser(data.user);
+        localStorage.setItem('ss_user', JSON.stringify(data.user));
+      }
+      return data;
+    } catch (err) {
+      const message = err.response?.data?.message || 'Failed to verify email change.';
+      return { success: false, message };
+    }
+  };
+
   const value = {
     user,
     token,
@@ -128,6 +186,9 @@ export function AuthProvider({ children }) {
     login,
     register,
     verifyEmail,
+    updateUserProfile,
+    requestEmailChange,
+    verifyEmailChange,
     logout,
     showLogin,
     showRegister,

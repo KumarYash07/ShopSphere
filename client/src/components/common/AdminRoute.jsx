@@ -1,7 +1,5 @@
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import Navbar from '../navbar/Navbar';
-import Footer from '../footer/Footer';
 
 export default function AdminRoute({ children }) {
   const { isAuthenticated, loading, user } = useAuth();
@@ -16,24 +14,22 @@ export default function AdminRoute({ children }) {
     );
   }
 
+  // 1. Not authenticated -> Redirect to Login
   if (!isAuthenticated) {
     return <Navigate to="/login?redirect=/admin" replace />;
   }
 
-  if (user?.role !== 'admin') {
-    return (
-      <>
-        <Navbar />
-        <div className="container py-5 my-5 text-center">
-          <div className="alert alert-danger p-4 d-inline-block shadow-sm rounded-3">
-            <h4 className="alert-heading fw-bold">Admin Privileges Required</h4>
-            <p className="mb-0">You do not have permission to access the ShopSphere Admin Control Panel.</p>
-          </div>
-        </div>
-        <Footer />
-      </>
-    );
+  // 2. Host user -> Redirect to Host / Seller Dashboard
+  if (user?.role === 'host') {
+    return <Navigate to="/seller" replace />;
   }
 
+  // 3. Customer user (or non-admin role) -> Redirect to Customer Dashboard
+  if (user?.role !== 'admin') {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  // 4. Admin user -> Render Admin Control Panel
   return children;
 }
+

@@ -21,13 +21,162 @@ import {
 import { getMyOrdersApi } from '../api/orderApi';
 
 export default function CustomerDashboard() {
-  const { user, logout } = useAuth();
+  const { user, role, logout, updateUserProfile, requestEmailChange, verifyEmailChange } = useAuth();
   const { cart } = useCart();
   const { wishlist } = useWishlist();
   const [searchParams] = useSearchParams();
 
   const initialTab = searchParams.get('tab') || 'profile';
   const [activeTab, setActiveTab] = useState(initialTab);
+
+  // Email Change Modal State
+  const [showEmailModal, setShowEmailModal] = useState(false);
+  const [emailStep, setEmailStep] = useState(1); // 1: Request OTP, 2: Verify OTP
+  const [newEmailInput, setNewEmailInput] = useState('');
+  const [otpInput, setOtpInput] = useState('');
+  const [emailLoading, setEmailLoading] = useState(false);
+
+  const handleRequestEmailChangeSubmit = async (e) => {
+    e.preventDefault();
+    if (!newEmailInput.trim()) {
+      showToast('danger', 'Please enter a valid new email address.');
+      return;
+    }
+    setEmailLoading(true);
+    try {
+      const res = await requestEmailChange(newEmailInput.trim());
+      if (res.success) {
+        showToast('success', res.message || 'OTP sent to your new email address.');
+        setEmailStep(2);
+      } else {
+        showToast('danger', res.message || 'Failed to request email change.');
+      }
+    } catch (err) {
+      showToast('danger', 'An error occurred while requesting email change.');
+    } finally {
+      setEmailLoading(false);
+    }
+  };
+
+  const handleVerifyEmailChangeSubmit = async (e) => {
+    e.preventDefault();
+    if (!newEmailInput.trim() || !otpInput.trim()) {
+      showToast('danger', 'Please enter both new email and OTP.');
+      return;
+    }
+    setEmailLoading(true);
+    try {
+      const res = await verifyEmailChange(newEmailInput.trim(), otpInput.trim());
+      if (res.success) {
+        showToast('success', res.message || 'Email changed and verified successfully!');
+        setShowEmailModal(false);
+        setNewEmailInput('');
+        setOtpInput('');
+        setEmailStep(1);
+      } else {
+        showToast('danger', res.message || 'Failed to verify email change.');
+      }
+    } catch (err) {
+      showToast('danger', 'An error occurred while verifying OTP.');
+    } finally {
+      setEmailLoading(false);
+    }
+  };
+
+  // Sync active tab with searchParams URL updates
+  useEffect(() => {
+    const tabFromUrl = searchParams.get('tab');
+    if (tabFromUrl) {
+      setActiveTab(tabFromUrl);
+    }
+  }, [searchParams]);
+
+  // Profile Edit State
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [profileForm, setProfileForm] = useState({
+    firstName: '',
+    lastName: '',
+    phone: '',
+  });
+
+  const handleStartEditProfile = () => {
+    setProfileForm({
+      firstName: user?.firstName || '',
+      lastName: user?.lastName || '',
+      phone: user?.phone || '',
+    });
+    setIsEditingProfile(true);
+  };
+
+  const handleCancelEditProfile = () => {
+    setIsEditingProfile(false);
+  };
+
+  const [savingProfile, setSavingProfile] = useState(false);
+
+  const handleSaveProfileSubmit = async (e) => {
+    e.preventDefault();
+    if (!profileForm.firstName.trim() || !profileForm.lastName.trim() || !profileForm.phone.trim()) {
+      showToast('danger', 'First name, last name and phone are required.');
+      return;
+    }
+
+    setSavingProfile(true);
+    try {
+      const res = await updateUserProfile({
+        firstName: profileForm.firstName.trim(),
+        lastName: profileForm.lastName.trim(),
+        phone: profileForm.phone.trim(),
+      });
+
+      if (res.success) {
+        showToast('success', res.message || 'Profile updated successfully!');
+        setIsEditingProfile(false);
+      } else {
+        showToast('danger', res.error || 'Failed to update profile.');
+      }
+    } catch (err) {
+      showToast('danger', 'An error occurred while updating profile.');
+    } finally {
+      setSavingProfile(false);
+    }
+  };
+
+  // Settings State & Handlers
+  const [passwordForm, setPasswordForm] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: '',
+  });
+
+  const [notificationPreferences, setNotificationPreferences] = useState({
+    orderUpdates: true,
+    deliveryUpdates: true,
+    promotional: false,
+    emailNotifications: true,
+  });
+
+  const handleChangePasswordSubmit = (e) => {
+    e.preventDefault();
+    if (!passwordForm.currentPassword || !passwordForm.newPassword || !passwordForm.confirmPassword) {
+      showToast('danger', 'Please fill in all password fields.');
+      return;
+    }
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      showToast('danger', 'New password and confirm password do not match.');
+      return;
+    }
+    showToast('info', 'ℹ️ Password update feature is currently unavailable on the server.');
+    setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+  };
+
+  const handleToggleNotification = (key) => {
+    setNotificationPreferences(prev => {
+      const next = { ...prev, [key]: !prev[key] };
+      showToast('success', 'Notification preference updated.');
+      return next;
+    });
+  };
 
   // Address Book State
   const [addresses, setAddresses] = useState([]);
@@ -183,13 +332,15 @@ export default function CustomerDashboard() {
 
   const userName = user ? (user.firstName ? `${user.firstName} ${user.lastName || ''}`.trim() : user.name || user.email) : '';
   const userAvatar = user?.profileImage || `https://ui-avatars.com/api/?name=${encodeURIComponent(userName)}&background=4F46E5&color=fff`;
+  const userRole = user?.role || role || 'user';
+  const roleBadgeLabel = userRole === 'admin' ? 'Admin' : userRole === 'host' ? 'Host / Seller' : 'Customer Account';
 
   return (
     <>
       <Navbar />
       <div className="bg-light min-vh-100 py-4">
         <div className="container">
-          
+
           {/* Feedback Banner */}
           {feedback.message && (
             <div className={`alert alert-${feedback.type} alert-dismissible fade show d-flex align-items-center gap-2 mb-4`} role="alert">
@@ -212,7 +363,7 @@ export default function CustomerDashboard() {
                 <h3 className="fw-bold text-dark mb-0">{userName}</h3>
                 <p className="text-muted small mb-1">{user?.email}</p>
                 <span className="badge bg-primary-subtle text-primary fw-bold text-capitalize" style={{ background: '#eef2ff', color: '#4F46E5' }}>
-                  Customer Account
+                  {roleBadgeLabel}
                 </span>
               </div>
             </div>
@@ -261,41 +412,111 @@ export default function CustomerDashboard() {
               {/* TAB: PROFILE */}
               {activeTab === 'profile' && (
                 <div className="card border-0 shadow-sm rounded-4 p-4 bg-white">
-                  <h4 className="fw-bold text-dark mb-4">Account Profile</h4>
-                  <div className="row g-3">
-                    <div className="col-md-6">
-                      <label className="form-label text-muted small fw-semibold">First Name</label>
-                      <input type="text" className="form-control" value={user?.firstName || ''} readOnly />
+                  <div className="d-flex align-items-center justify-content-between mb-4">
+                    <div>
+                      <h4 className="fw-bold text-dark mb-0">Account Profile</h4>
+                      <p className="text-muted small mb-0">Manage your personal account information.</p>
                     </div>
-                    <div className="col-md-6">
-                      <label className="form-label text-muted small fw-semibold">Last Name</label>
-                      <input type="text" className="form-control" value={user?.lastName || ''} readOnly />
-                    </div>
-                    <div className="col-md-6">
-                      <label className="form-label text-muted small fw-semibold">Email Address</label>
-                      <input type="email" className="form-control" value={user?.email || ''} readOnly />
-                    </div>
-                    <div className="col-md-6">
-                      <label className="form-label text-muted small fw-semibold">Phone Number</label>
-                      <input type="tel" className="form-control" value={user?.phone || 'Not provided'} readOnly />
-                    </div>
-                    <div className="col-md-6">
-                      <label className="form-label text-muted small fw-semibold">Email Verified</label>
-                      <div>
-                        <span className={`badge ${user?.isEmailVerified ? 'bg-success' : 'bg-warning text-dark'}`}>
-                          {user?.isEmailVerified ? '✓ Verified' : 'Pending Verification'}
-                        </span>
+                    {!isEditingProfile ? (
+                      <button
+                        type="button"
+                        className="btn btn-outline-primary btn-sm rounded-pill px-3 d-flex align-items-center gap-1 fw-bold"
+                        onClick={handleStartEditProfile}
+                      >
+                        <FiEdit size={14} /> Edit Profile
+                      </button>
+                    ) : (
+                      <div className="d-flex gap-2">
+                        <button
+                          type="button"
+                          className="btn btn-light btn-sm rounded-pill px-3 fw-semibold"
+                          onClick={handleCancelEditProfile}
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-primary btn-sm rounded-pill px-3 fw-bold"
+                          style={{ background: '#4F46E5', borderColor: '#4F46E5' }}
+                          onClick={handleSaveProfileSubmit}
+                          disabled={savingProfile}
+                        >
+                          {savingProfile ? 'Saving...' : 'Save Changes'}
+                        </button>
                       </div>
-                    </div>
-                    <div className="col-md-6">
-                      <label className="form-label text-muted small fw-semibold">Account Status</label>
-                      <div>
-                        <span className="badge bg-info text-dark text-capitalize">
-                          {user?.status || 'Active'}
-                        </span>
-                      </div>
-                    </div>
+                    )}
                   </div>
+
+                  <form onSubmit={handleSaveProfileSubmit}>
+                    <div className="row g-3">
+                      <div className="col-md-6">
+                        <label className="form-label text-muted small fw-semibold">First Name *</label>
+                        <input
+                          type="text"
+                          className={`form-control ${isEditingProfile ? '' : 'bg-light'}`}
+                          value={isEditingProfile ? profileForm.firstName : (user?.firstName || '')}
+                          onChange={(e) => setProfileForm({ ...profileForm, firstName: e.target.value })}
+                          readOnly={!isEditingProfile}
+                          required
+                        />
+                      </div>
+                      <div className="col-md-6">
+                        <label className="form-label text-muted small fw-semibold">Last Name</label>
+                        <input
+                          type="text"
+                          className={`form-control ${isEditingProfile ? '' : 'bg-light'}`}
+                          value={isEditingProfile ? profileForm.lastName : (user?.lastName || '')}
+                          onChange={(e) => setProfileForm({ ...profileForm, lastName: e.target.value })}
+                          readOnly={!isEditingProfile}
+                        />
+                      </div>
+                      <div className="col-md-6">
+                        <div className="d-flex align-items-center justify-content-between mb-1">
+                          <label className="form-label text-muted small fw-semibold m-0">Email Address</label>
+                          <button
+                            type="button"
+                            className="btn btn-link btn-sm p-0 text-decoration-none small fw-bold"
+                            style={{ color: '#4F46E5' }}
+                            onClick={() => {
+                              setShowEmailModal(true);
+                              setEmailStep(1);
+                              setNewEmailInput('');
+                              setOtpInput('');
+                            }}
+                          >
+                            Change Email →
+                          </button>
+                        </div>
+                        <input type="email" className="form-control bg-light" value={user?.email || ''} readOnly />
+                      </div>
+                      <div className="col-md-6">
+                        <label className="form-label text-muted small fw-semibold">Phone Number</label>
+                        <input
+                          type="tel"
+                          className={`form-control ${isEditingProfile ? '' : 'bg-light'}`}
+                          value={isEditingProfile ? profileForm.phone : (user?.phone || 'Not provided')}
+                          onChange={(e) => setProfileForm({ ...profileForm, phone: e.target.value })}
+                          readOnly={!isEditingProfile}
+                        />
+                      </div>
+                      <div className="col-md-6">
+                        <label className="form-label text-muted small fw-semibold">Email Verified (Read-Only)</label>
+                        <div>
+                          <span className={`badge ${user?.isEmailVerified ? 'bg-success' : 'bg-warning text-dark'}`}>
+                            {user?.isEmailVerified ? '✓ Verified' : 'Pending Verification'}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="col-md-6">
+                        <label className="form-label text-muted small fw-semibold">Account Status (Read-Only)</label>
+                        <div>
+                          <span className="badge bg-info text-dark text-capitalize">
+                            {user?.status || 'Active'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </form>
                 </div>
               )}
 
@@ -526,11 +747,120 @@ export default function CustomerDashboard() {
 
               {/* TAB: SETTINGS */}
               {activeTab === 'settings' && (
-                <div className="card border-0 shadow-sm rounded-4 p-4 bg-white">
-                  <h4 className="fw-bold text-dark mb-4">Account Settings</h4>
-                  <p className="text-muted small">Update password and notification preferences.</p>
-                  <div className="alert alert-info small">
-                    Password update feature coming soon.
+                <div className="d-flex flex-column gap-4">
+                  {/* Section A: Password & Security */}
+                  <div className="card border-0 shadow-sm rounded-4 p-4 bg-white">
+                    <h5 className="fw-bold text-dark mb-1">Password & Security</h5>
+                    <p className="text-muted small mb-4">Manage your login password and account credentials.</p>
+
+                    <form onSubmit={handleChangePasswordSubmit}>
+                      <div className="row g-3" style={{ maxWidth: 600 }}>
+                        <div className="col-12">
+                          <label className="form-label text-muted small fw-semibold">Current Password</label>
+                          <input
+                            type="password"
+                            className="form-control"
+                            placeholder="••••••••"
+                            value={passwordForm.currentPassword}
+                            onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })}
+                          />
+                        </div>
+                        <div className="col-md-6">
+                          <label className="form-label text-muted small fw-semibold">New Password</label>
+                          <input
+                            type="password"
+                            className="form-control"
+                            placeholder="••••••••"
+                            value={passwordForm.newPassword}
+                            onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
+                          />
+                        </div>
+                        <div className="col-md-6">
+                          <label className="form-label text-muted small fw-semibold">Confirm New Password</label>
+                          <input
+                            type="password"
+                            className="form-control"
+                            placeholder="••••••••"
+                            value={passwordForm.confirmPassword}
+                            onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
+                          />
+                        </div>
+                        <div className="col-12 mt-3">
+                          <button
+                            type="submit"
+                            className="btn btn-primary rounded-pill px-4 fw-bold"
+                            style={{ background: '#4F46E5', borderColor: '#4F46E5' }}
+                          >
+                            Change Password
+                          </button>
+                        </div>
+                      </div>
+                    </form>
+                  </div>
+
+                  {/* Section B: Notifications */}
+                  <div className="card border-0 shadow-sm rounded-4 p-4 bg-white">
+                    <h5 className="fw-bold text-dark mb-1">Notification Preferences</h5>
+                    <p className="text-muted small mb-4">Choose how you want to receive alerts and notifications.</p>
+
+                    <div className="d-flex flex-column gap-3" style={{ maxWidth: 600 }}>
+                      {[
+                        { key: 'orderUpdates', label: 'Order Updates', desc: 'Receive real-time updates when order status changes.' },
+                        { key: 'deliveryUpdates', label: 'Delivery Updates', desc: 'Get SMS and tracking alerts for active shipments.' },
+                        { key: 'promotional', label: 'Promotional Notifications', desc: 'Receive special discount vouchers and sale announcements.' },
+                        { key: 'emailNotifications', label: 'Email Notifications', desc: 'Receive summary invoices and account updates via email.' },
+                      ].map(item => (
+                        <div key={item.key} className="d-flex align-items-center justify-content-between p-3 rounded-3 border bg-light">
+                          <div>
+                            <div className="fw-bold text-dark small">{item.label}</div>
+                            <div className="text-muted small" style={{ fontSize: 12 }}>{item.desc}</div>
+                          </div>
+                          <div className="form-check form-switch m-0 ms-3">
+                            <input
+                              className="form-check-input"
+                              type="checkbox"
+                              role="switch"
+                              style={{ width: 42, height: 22, cursor: 'pointer' }}
+                              checked={notificationPreferences[item.key]}
+                              onChange={() => handleToggleNotification(item.key)}
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Section C: Account Security */}
+                  <div className="card border-0 shadow-sm rounded-4 p-4 bg-white">
+                    <h5 className="fw-bold text-dark mb-1">Account Security Overview</h5>
+                    <p className="text-muted small mb-4">Summary of your account status and credentials.</p>
+
+                    <div className="row g-3">
+                      <div className="col-md-4">
+                        <div className="p-3 bg-light rounded-3 border">
+                          <div className="text-muted small fw-semibold mb-1">Email Verification</div>
+                          <span className={`badge ${user?.isEmailVerified ? 'bg-success' : 'bg-warning text-dark'}`}>
+                            {user?.isEmailVerified ? '✓ Verified' : 'Pending Verification'}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="col-md-4">
+                        <div className="p-3 bg-light rounded-3 border">
+                          <div className="text-muted small fw-semibold mb-1">Account Status</div>
+                          <span className="badge bg-info text-dark text-capitalize">
+                            {user?.status || 'Active'}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="col-md-4">
+                        <div className="p-3 bg-light rounded-3 border">
+                          <div className="text-muted small fw-semibold mb-1">Logged-in Role</div>
+                          <span className="badge bg-primary-subtle text-primary fw-bold text-capitalize" style={{ background: '#eef2ff', color: '#4F46E5' }}>
+                            {roleBadgeLabel}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
               )}
@@ -542,7 +872,7 @@ export default function CustomerDashboard() {
 
       {/* Add / Edit Address Modal */}
       {showAddressModal && (
-        <div className="modal fade show d-block" tabIndex="-1" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+        <div className="modal fade show d-block" tabIndex="-1" style={{ backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1060 }}>
           <div className="modal-dialog modal-dialog-centered modal-lg">
             <div className="modal-content rounded-4 border-0 shadow">
               <div className="modal-header border-bottom-0 pb-0">
@@ -687,6 +1017,97 @@ export default function CustomerDashboard() {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Email Change OTP Modal */}
+      {showEmailModal && (
+        <div className="modal fade show d-block" tabIndex="-1" style={{ backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1065 }}>
+          <div className="modal-dialog modal-dialog-centered">
+            <div className="modal-content rounded-4 border-0 shadow-lg overflow-hidden">
+              <div className="modal-header bg-dark text-white py-3">
+                <h5 className="modal-title fw-bold fs-6">
+                  {emailStep === 1 ? 'Change Email Address' : 'Verify New Email OTP'}
+                </h5>
+                <button type="button" className="btn-close btn-close-white" onClick={() => setShowEmailModal(false)} />
+              </div>
+
+              {emailStep === 1 ? (
+                <form onSubmit={handleRequestEmailChangeSubmit}>
+                  <div className="modal-body p-4">
+                    <p className="text-secondary small mb-3">
+                      Current Email: <strong>{user?.email}</strong><br />
+                      Enter your new email address below. We will send a 6-digit verification OTP to your new email address.
+                    </p>
+
+                    <div className="mb-3">
+                      <label className="form-label text-dark fw-semibold small">New Email Address *</label>
+                      <input
+                        type="email"
+                        className="form-control"
+                        placeholder="e.g. new.email@example.com"
+                        value={newEmailInput}
+                        onChange={(e) => setNewEmailInput(e.target.value)}
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="modal-footer bg-light py-2">
+                    <button type="button" className="btn btn-light rounded-pill px-3" onClick={() => setShowEmailModal(false)}>
+                      Cancel
+                    </button>
+                    <button type="submit" className="btn btn-primary rounded-pill px-4 fw-bold" style={{ background: '#4F46E5', borderColor: '#4F46E5' }} disabled={emailLoading}>
+                      {emailLoading ? 'Sending OTP...' : 'Send Verification OTP'}
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <form onSubmit={handleVerifyEmailChangeSubmit}>
+                  <div className="modal-body p-4 text-center">
+                    <div className="display-6 text-primary mb-2">✉️</div>
+                    <h6 className="fw-bold text-dark mb-1">Enter Verification Code</h6>
+                    <p className="text-secondary small mb-4">
+                      We have sent a 6-digit OTP code to <strong>{newEmailInput}</strong>.
+                    </p>
+
+                    <div className="mb-3" style={{ maxWidth: 280, margin: '0 auto' }}>
+                      <input
+                        type="text"
+                        className="form-control text-center font-monospace fs-4 tracking-widest"
+                        placeholder="123456"
+                        maxLength={6}
+                        value={otpInput}
+                        onChange={(e) => setOtpInput(e.target.value)}
+                        required
+                      />
+                    </div>
+
+                    <div className="small text-muted">
+                      Didn't receive code?{' '}
+                      <button
+                        type="button"
+                        className="btn btn-link btn-sm p-0 fw-semibold text-decoration-none"
+                        onClick={handleRequestEmailChangeSubmit}
+                        disabled={emailLoading}
+                      >
+                        Resend OTP
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="modal-footer bg-light py-2">
+                    <button type="button" className="btn btn-light rounded-pill px-3" onClick={() => setEmailStep(1)}>
+                      Back
+                    </button>
+                    <button type="submit" className="btn btn-primary rounded-pill px-4 fw-bold" style={{ background: '#4F46E5', borderColor: '#4F46E5' }} disabled={emailLoading}>
+                      {emailLoading ? 'Verifying...' : 'Verify & Change Email'}
+                    </button>
+                  </div>
+                </form>
+              )}
             </div>
           </div>
         </div>

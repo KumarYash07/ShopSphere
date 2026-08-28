@@ -11,7 +11,8 @@ import { getCategoriesApi, createCategoryApi, updateCategoryApi } from '../api/c
 import {
   getPendingHostsApi, updateHostStatusApi, getAdminStatsApi, getAllHostsApi, getHostDetailsApi,
   getAllStoresApi, getStoreDetailsApi, updateStoreStatusApi,
-  getAllProductsForAdminApi, getAdminProductDetailsApi, updateProductStatusByAdminApi
+  getAllProductsForAdminApi, getAdminProductDetailsApi, updateProductStatusByAdminApi,
+  getAllOrdersAdminApi, getRevenueStatsAdminApi, getAdminOrderByIdApi, updateOrderStatusAdminApi
 } from '../api/adminApi';
 import { formatPrice } from '../utils/helpers';
 
@@ -53,6 +54,17 @@ export default function AdminDashboard() {
   const [loadingStores, setLoadingStores] = useState(true);
   const [loadingStoreDetails, setLoadingStoreDetails] = useState(false);
   const [storeActionLoadingId, setStoreActionLoadingId] = useState(null);
+
+  // Admin Orders & Revenue State
+  const [adminOrders, setAdminOrders] = useState([]);
+  const [revenueStats, setRevenueStats] = useState(null);
+  const [loadingAdminOrders, setLoadingAdminOrders] = useState(true);
+  const [adminOrderFilter, setAdminOrderFilter] = useState('all'); // 'all' | 'pending' | 'confirmed' | 'processing' | 'shipped' | 'delivered' | 'cancelled'
+  const [selectedAdminOrder, setSelectedAdminOrder] = useState(null);
+  const [loadingAdminOrderDetails, setLoadingAdminOrderDetails] = useState(false);
+  const [updatingOrderStatusId, setUpdatingOrderStatusId] = useState(null);
+  const [newOrderStatus, setNewOrderStatus] = useState('');
+  const [cancellationReasonInput, setCancellationReasonInput] = useState('');
 
   // Feedback Toast
   const [feedback, setFeedback] = useState({ type: '', message: '' });
@@ -295,12 +307,80 @@ export default function AdminDashboard() {
     }
   };
 
+  // Load Admin Orders & Revenue Statistics
+  const fetchAdminOrdersData = async () => {
+    setLoadingAdminOrders(true);
+    try {
+      const [ordersRes, revRes] = await Promise.all([
+        getAllOrdersAdminApi(),
+        getRevenueStatsAdminApi(),
+      ]);
+
+      if (ordersRes.success && Array.isArray(ordersRes.orders)) {
+        setAdminOrders(ordersRes.orders);
+      }
+      if (revRes.success) {
+        setRevenueStats(revRes);
+      }
+    } catch (err) {
+      console.error('Failed to load admin orders:', err);
+      showToast('danger', err.response?.data?.message || 'Failed to fetch platform orders.');
+    } finally {
+      setLoadingAdminOrders(false);
+    }
+  };
+
+  // Fetch Detailed Single Order Info for Admin
+  const handleViewAdminOrderDetails = async (orderId) => {
+    setLoadingAdminOrderDetails(true);
+    try {
+      const data = await getAdminOrderByIdApi(orderId);
+      if (data.success && data.order) {
+        setSelectedAdminOrder(data.order);
+        setNewOrderStatus(data.order.orderStatus || 'pending');
+        setCancellationReasonInput(data.order.cancellationReason || '');
+      }
+    } catch (err) {
+      console.error('Failed to fetch admin order details:', err);
+      showToast('danger', err.response?.data?.message || 'Failed to load order details.');
+    } finally {
+      setLoadingAdminOrderDetails(false);
+    }
+  };
+
+  // Update Order Status by Admin
+  const handleUpdateOrderStatusSubmit = async (orderId, targetStatus, reason) => {
+    if (!orderId || !targetStatus) return;
+    setUpdatingOrderStatusId(orderId);
+    try {
+      const data = await updateOrderStatusAdminApi(orderId, targetStatus, reason);
+      if (data.success) {
+        showToast('success', data.message || `Order status updated to ${targetStatus}.`);
+        fetchAdminOrdersData();
+        if (selectedAdminOrder && selectedAdminOrder._id === orderId) {
+          setSelectedAdminOrder(prev => prev ? {
+            ...prev,
+            orderStatus: targetStatus,
+            cancellationReason: reason,
+            deliveredAt: targetStatus === 'delivered' ? new Date() : prev.deliveredAt,
+            cancelledAt: targetStatus === 'cancelled' ? new Date() : prev.cancelledAt,
+          } : null);
+        }
+      }
+    } catch (err) {
+      showToast('danger', err.response?.data?.message || 'Failed to update order status.');
+    } finally {
+      setUpdatingOrderStatusId(null);
+    }
+  };
+
   useEffect(() => {
     fetchCategories();
     fetchProducts();
     fetchHostsData();
     fetchStoresData();
     fetchAdminStats();
+    fetchAdminOrdersData();
   }, []);
 
   // Category Submit (Create / Update)
@@ -1513,14 +1593,338 @@ export default function AdminDashboard() {
 
           {/* TAB 5: ORDERS & REVENUE */}
           {activeTab === 'orders' && (
-            <div className="card border-0 shadow-sm rounded-4 p-5 text-center bg-white">
-              <div className="display-4 text-muted mb-3">📊</div>
-              <h4 className="fw-bold text-dark">Platform Orders & Revenue API Pending</h4>
-              <p className="text-muted small">
-                Admin order aggregate reporting endpoints will be integrated once order processing APIs are added to the backend.
-              </p>
-              <div className="badge bg-warning text-dark px-3 py-2 rounded-pill mx-auto mt-2">
-                Backend Integration Pending
+            <div>
+              {/* Revenue Stats KPI Cards */}
+              <div className="row g-3 mb-4">
+                <div className="col-6 col-md-3">
+                  <div className="card border-0 shadow-sm rounded-4 p-3 bg-white h-100">
+                    <div className="d-flex align-items-center justify-content-between text-muted small fw-semibold mb-1">
+                      <span>Total Revenue</span>
+                      <FiDollarSign className="text-success" />
+                    </div>
+                    <div className="fs-3 fw-bold text-success my-1">
+                      {loadingAdminOrders ? (
+                        <div className="spinner-border spinner-border-sm text-success" role="status" />
+                      ) : (
+                        formatPrice(revenueStats?.revenue?.totalRevenue || 0)
+                      )}
+                    </div>
+                    <div className="small text-muted">From paid transactions</div>
+                  </div>
+                </div>
+
+                <div className="col-6 col-md-3">
+                  <div className="card border-0 shadow-sm rounded-4 p-3 bg-white h-100">
+                    <div className="d-flex align-items-center justify-content-between text-muted small fw-semibold mb-1">
+                      <span>Paid Orders</span>
+                      <FiCheckCircle className="text-primary" />
+                    </div>
+                    <div className="display-6 fw-bold text-primary my-1">
+                      {loadingAdminOrders ? (
+                        <div className="spinner-border spinner-border-sm text-primary" role="status" />
+                      ) : (
+                        revenueStats?.revenue?.totalPaidOrders ?? 0
+                      )}
+                    </div>
+                    <div className="small text-muted">Completed payments</div>
+                  </div>
+                </div>
+
+                <div className="col-6 col-md-3">
+                  <div className="card border-0 shadow-sm rounded-4 p-3 bg-white h-100">
+                    <div className="d-flex align-items-center justify-content-between text-muted small fw-semibold mb-1">
+                      <span>Total Orders</span>
+                      <FiPackage className="text-info" />
+                    </div>
+                    <div className="display-6 fw-bold text-info my-1">
+                      {loadingAdminOrders ? (
+                        <div className="spinner-border spinner-border-sm text-info" role="status" />
+                      ) : (
+                        revenueStats?.orders?.total ?? adminOrders.length
+                      )}
+                    </div>
+                    <div className="small text-muted">All-time order count</div>
+                  </div>
+                </div>
+
+                <div className="col-6 col-md-3">
+                  <div className="card border-0 shadow-sm rounded-4 p-3 bg-white h-100">
+                    <div className="d-flex align-items-center justify-content-between text-muted small fw-semibold mb-1">
+                      <span>Delivered Orders</span>
+                      <FiCheck className="text-success" />
+                    </div>
+                    <div className="display-6 fw-bold text-success my-1">
+                      {loadingAdminOrders ? (
+                        <div className="spinner-border spinner-border-sm text-success" role="status" />
+                      ) : (
+                        adminOrders.filter(o => o.orderStatus === 'delivered').length
+                      )}
+                    </div>
+                    <div className="small text-muted">Successfully fulfilled</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Order Status Filters & Table Header */}
+              <div className="card border-0 shadow-sm rounded-4 p-4 bg-white mb-4">
+                <div className="d-flex flex-column flex-md-row align-items-md-center justify-content-between mb-3 gap-2">
+                  <div>
+                    <h5 className="fw-bold text-dark mb-0">Platform Orders Management</h5>
+                    <p className="small text-muted mb-0">Inspect customer purchases, track fulfillment, and update order statuses.</p>
+                  </div>
+                  <button className="btn btn-outline-primary btn-sm rounded-pill px-3 d-flex align-items-center gap-1" onClick={fetchAdminOrdersData}>
+                    <FiRefreshCw size={14} /> Refresh Orders
+                  </button>
+                </div>
+
+                {/* Status Filter Buttons */}
+                <div className="d-flex gap-2 flex-wrap mb-4">
+                  {[
+                    { id: 'all', label: 'All Orders' },
+                    { id: 'pending', label: 'Pending' },
+                    { id: 'confirmed', label: 'Confirmed' },
+                    { id: 'processing', label: 'Processing' },
+                    { id: 'shipped', label: 'Shipped' },
+                    { id: 'delivered', label: 'Delivered' },
+                    { id: 'cancelled', label: 'Cancelled' },
+                  ].map(f => (
+                    <button
+                      key={f.id}
+                      type="button"
+                      className={`btn btn-sm rounded-pill px-3 fw-semibold ${adminOrderFilter === f.id ? 'btn-primary' : 'btn-light text-secondary'}`}
+                      style={adminOrderFilter === f.id ? { background: '#4F46E5', borderColor: '#4F46E5' } : {}}
+                      onClick={() => setAdminOrderFilter(f.id)}
+                    >
+                      {f.label} ({f.id === 'all' ? adminOrders.length : adminOrders.filter(o => o.orderStatus === f.id).length})
+                    </button>
+                  ))}
+                </div>
+
+                {/* Orders Table */}
+                {loadingAdminOrders ? (
+                  <div className="text-center py-5">
+                    <div className="spinner-border text-primary" role="status" />
+                    <p className="text-muted small mt-2">Loading platform orders...</p>
+                  </div>
+                ) : adminOrders.length === 0 ? (
+                  <div className="text-center py-5 bg-light rounded-4">
+                    <p className="text-muted mb-0">No platform orders found.</p>
+                  </div>
+                ) : (
+                  <div className="table-responsive">
+                    <table className="table table-hover align-middle mb-0">
+                      <thead className="table-light">
+                        <tr>
+                          <th className="small text-uppercase text-muted">Order #</th>
+                          <th className="small text-uppercase text-muted">Customer</th>
+                          <th className="small text-uppercase text-muted">Date</th>
+                          <th className="small text-uppercase text-muted">Amount</th>
+                          <th className="small text-uppercase text-muted">Payment</th>
+                          <th className="small text-uppercase text-muted">Order Status</th>
+                          <th className="text-end small text-uppercase text-muted">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {adminOrders
+                          .filter(o => adminOrderFilter === 'all' || o.orderStatus === adminOrderFilter)
+                          .map(order => {
+                            const customerName = order.user ? `${order.user.firstName} ${order.user.lastName}` : 'Guest / Deleted User';
+                            return (
+                              <tr key={order._id}>
+                                <td>
+                                  <span className="fw-bold text-dark font-monospace">{order.orderNumber}</span>
+                                </td>
+                                <td>
+                                  <div className="fw-semibold text-dark">{customerName}</div>
+                                  {order.user?.email && <span className="text-muted small d-block">{order.user.email}</span>}
+                                </td>
+                                <td>
+                                  <span className="small text-secondary">
+                                    {order.createdAt ? new Date(order.createdAt).toLocaleDateString() : 'N/A'}
+                                  </span>
+                                </td>
+                                <td>
+                                  <span className="fw-bold text-primary">{formatPrice(order.totalAmount)}</span>
+                                </td>
+                                <td>
+                                  <div className="d-flex flex-column">
+                                    <span className="small fw-semibold text-uppercase">{order.paymentMethod}</span>
+                                    <span className={`badge rounded-pill ${order.paymentStatus === 'paid' ? 'bg-success-subtle text-success' : order.paymentStatus === 'failed' ? 'bg-danger-subtle text-danger' : 'bg-secondary-subtle text-dark'}`} style={{ width: 'fit-content', fontSize: 10 }}>
+                                      {order.paymentStatus}
+                                    </span>
+                                  </div>
+                                </td>
+                                <td>
+                                  <span className={`badge rounded-pill ${
+                                    order.orderStatus === 'delivered' ? 'bg-success' :
+                                    order.orderStatus === 'cancelled' ? 'bg-danger' :
+                                    order.orderStatus === 'shipped' ? 'bg-info text-dark' :
+                                    order.orderStatus === 'processing' ? 'bg-primary' :
+                                    order.orderStatus === 'confirmed' ? 'bg-primary-subtle text-primary' : 'bg-warning text-dark'
+                                  } px-3 py-2 text-capitalize`}>
+                                    {order.orderStatus}
+                                  </span>
+                                </td>
+                                <td className="text-end">
+                                  <button
+                                    className="btn btn-sm btn-outline-primary rounded-pill px-3 fw-semibold d-inline-flex align-items-center gap-1"
+                                    onClick={() => handleViewAdminOrderDetails(order._id)}
+                                  >
+                                    <FiEye size={14} /> View & Manage
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ADMIN ORDER DETAILS & STATUS UPDATE MODAL */}
+          {selectedAdminOrder && (
+            <div className="modal fade show d-block" tabIndex="-1" style={{ backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1060 }}>
+              <div className="modal-dialog modal-dialog-centered modal-lg">
+                <div className="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+                  <div className="modal-header bg-dark text-white py-3">
+                    <h5 className="modal-title fw-bold d-flex align-items-center gap-2">
+                      <FiPackage /> Order #{selectedAdminOrder.orderNumber}
+                    </h5>
+                    <button type="button" className="btn-close btn-close-white" onClick={() => setSelectedAdminOrder(null)} />
+                  </div>
+
+                  <div className="modal-body p-4" style={{ maxHeight: '80vh', overflowY: 'auto' }}>
+                    {/* Status update banner */}
+                    <div className="card border-primary mb-4 bg-primary-subtle rounded-3 p-3">
+                      <h6 className="fw-bold text-primary mb-2">Update Order Status</h6>
+                      <div className="row g-2 align-items-center">
+                        <div className="col-md-5">
+                          <select
+                            className="form-select form-select-sm fw-semibold"
+                            value={newOrderStatus}
+                            onChange={(e) => setNewOrderStatus(e.target.value)}
+                            disabled={selectedAdminOrder.orderStatus === 'cancelled'}
+                          >
+                            <option value="pending">pending</option>
+                            <option value="confirmed">confirmed</option>
+                            <option value="processing">processing</option>
+                            <option value="shipped">shipped</option>
+                            <option value="delivered">delivered</option>
+                            <option value="cancelled">cancelled</option>
+                          </select>
+                        </div>
+
+                        {newOrderStatus === 'cancelled' && (
+                          <div className="col-md-7">
+                            <input
+                              type="text"
+                              className="form-control form-control-sm"
+                              placeholder="Reason for cancellation (optional)"
+                              value={cancellationReasonInput}
+                              onChange={(e) => setCancellationReasonInput(e.target.value)}
+                            />
+                          </div>
+                        )}
+
+                        <div className="col-12 mt-2">
+                          {selectedAdminOrder.orderStatus === 'cancelled' ? (
+                            <div className="alert alert-warning py-2 mb-0 small">
+                              ⚠️ Cancelled orders cannot be updated.
+                            </div>
+                          ) : (
+                            <button
+                              className="btn btn-primary btn-sm rounded-pill px-4 fw-bold"
+                              onClick={() => handleUpdateOrderStatusSubmit(selectedAdminOrder._id, newOrderStatus, cancellationReasonInput)}
+                              disabled={updatingOrderStatusId === selectedAdminOrder._id}
+                            >
+                              {updatingOrderStatusId === selectedAdminOrder._id ? 'Saving Changes...' : 'Save New Status'}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="row g-3 mb-4">
+                      {/* Customer Info */}
+                      <div className="col-md-6">
+                        <div className="bg-light p-3 rounded-3 border h-100">
+                          <div className="fw-semibold text-dark mb-2 text-uppercase small" style={{ fontSize: 11 }}>Customer Profile</div>
+                          <div className="fw-bold text-dark">
+                            {selectedAdminOrder.user ? `${selectedAdminOrder.user.firstName} ${selectedAdminOrder.user.lastName}` : 'N/A'}
+                          </div>
+                          <div className="small text-muted">{selectedAdminOrder.user?.email}</div>
+                          <div className="small text-muted">{selectedAdminOrder.user?.phone}</div>
+                        </div>
+                      </div>
+
+                      {/* Payment & Shipping Summary */}
+                      <div className="col-md-6">
+                        <div className="bg-light p-3 rounded-3 border h-100">
+                          <div className="fw-semibold text-dark mb-2 text-uppercase small" style={{ fontSize: 11 }}>Payment & Delivery Summary</div>
+                          <div className="small d-flex justify-content-between mb-1">
+                            <span className="text-muted">Payment Method:</span>
+                            <span className="fw-bold text-uppercase">{selectedAdminOrder.paymentMethod}</span>
+                          </div>
+                          <div className="small d-flex justify-content-between mb-1">
+                            <span className="text-muted">Payment Status:</span>
+                            <span className={`badge ${selectedAdminOrder.paymentStatus === 'paid' ? 'bg-success' : 'bg-secondary'}`}>{selectedAdminOrder.paymentStatus}</span>
+                          </div>
+                          <div className="small d-flex justify-content-between">
+                            <span className="text-muted">Total Amount:</span>
+                            <span className="fw-bold text-primary">{formatPrice(selectedAdminOrder.totalAmount)}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Shipping Address */}
+                    {selectedAdminOrder.shippingAddress && (
+                      <div className="bg-light p-3 rounded-3 mb-4 border">
+                        <div className="fw-semibold text-dark mb-1 text-uppercase small" style={{ fontSize: 11 }}>Shipping Address</div>
+                        <div className="small text-secondary">
+                          <strong>{selectedAdminOrder.shippingAddress.fullName}</strong> ({selectedAdminOrder.shippingAddress.phone})<br />
+                          {selectedAdminOrder.shippingAddress.addressLine1}, {selectedAdminOrder.shippingAddress.addressLine2 ? selectedAdminOrder.shippingAddress.addressLine2 + ', ' : ''}
+                          {selectedAdminOrder.shippingAddress.city}, {selectedAdminOrder.shippingAddress.state} - {selectedAdminOrder.shippingAddress.pincode}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Order Items */}
+                    <div className="mb-3">
+                      <div className="fw-semibold text-dark mb-2 text-uppercase small" style={{ fontSize: 11 }}>Purchased Items ({selectedAdminOrder.items?.length || 0})</div>
+                      <div className="list-group list-group-flush rounded-3 border">
+                        {selectedAdminOrder.items?.map((item, idx) => (
+                          <div key={idx} className="list-group-item d-flex align-items-center gap-3 py-3">
+                            <img
+                              src={item.productImage || item.product?.images?.[0] || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=100'}
+                              alt={item.productName}
+                              className="rounded-3 object-fit-cover"
+                              style={{ width: 50, height: 50 }}
+                            />
+                            <div className="flex-grow-1">
+                              <div className="fw-bold text-dark small">{item.productName}</div>
+                              <div className="small text-muted">
+                                Store: {item.store?.storeName || 'N/A'} · Qty: {item.quantity} × {formatPrice(item.price)}
+                              </div>
+                            </div>
+                            <div className="fw-bold text-primary small">
+                              {formatPrice(item.total)}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="modal-footer bg-light py-2">
+                    <button className="btn btn-secondary rounded-pill px-4" onClick={() => setSelectedAdminOrder(null)}>
+                      Close
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           )}

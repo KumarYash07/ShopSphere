@@ -24,11 +24,13 @@ export default function LoginModal() {
     setError('');
     if (!email || !password) { setError('Please fill in all fields'); return; }
     setLoading(true);
-    await new Promise(r => setTimeout(r, 600));
-    const result = login(email, password);
+    const result = await login(email.trim(), password);
     setLoading(false);
-    if (result.success) { closeAuth(); }
-    else { setError(result.error); }
+    if (result.success) {
+      closeAuth();
+    } else {
+      setError(result.error || 'Login failed');
+    }
   };
 
   const demoLogin = (role) => {

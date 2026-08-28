@@ -698,3 +698,28 @@ export const uploadProductImages = async (req, res) => {
     });
   }
 };
+
+// Get Host's Products
+export const getMyProducts = async (req, res) => {
+  try {
+    const products = await Product.find({
+      seller: req.user._id,
+    })
+      .populate("category", "name slug")
+      .populate("store", "storeName logo")
+      .sort({ createdAt: -1 });
+
+    return res.status(200).json({
+      success: true,
+      count: products.length,
+      products,
+    });
+  } catch (error) {
+    console.error("Get My Products Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Server error while fetching your products.",
+    });
+  }
+};

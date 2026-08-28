@@ -11,6 +11,8 @@ import cartRoutes from "./routes/cartRoutes.js";
 import addressRoutes from "./routes/addressRoutes.js";
 import orderRoutes from "./routes/orderRoutes.js";
 import paymentRoutes from "./routes/paymentRoutes.js";
+import adminOrderRoutes from "./routes/adminOrderRoutes.js";
+import hostOrderRoutes from "./routes/hostOrderRoutes.js";
 
 const app = express();
 
@@ -53,7 +55,14 @@ app.use("/api/addresses", addressRoutes);
 
 //Order
 app.use("/api/orders", orderRoutes);
+
 //Payments
 app.use("/api/payments", paymentRoutes);
+
+//Admin Orders
+app.use("/api/admin/orders", adminOrderRoutes);
+
+//Host Orders
+app.use("/api/host/orders", hostOrderRoutes);
 
 export default app;
