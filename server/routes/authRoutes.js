@@ -7,6 +7,9 @@ import {
   requestEmailChange,
   verifyEmailChange,
   updateProfile,
+  changePassword,
+  createPassword,
+  googleAuth,
 } from "../controllers/authController.js";
 
 import { protect } from "../middleware/authMiddleware.js";
@@ -19,7 +22,12 @@ router.post("/verify-email", verifyEmail);
 
 router.post("/login", loginUser);
 
+router.post("/google", googleAuth);
+
 router.put("/profile", protect, updateProfile);
+
+router.put("/change-password", protect, changePassword);
+router.post("/create-password", protect, createPassword);
 
 router.post(
   "/change-email/request",

@@ -6,9 +6,10 @@ import {
 } from 'react-icons/fi';
 import { FcGoogle } from 'react-icons/fc';
 import { useAuth } from '../context/AuthContext';
+import { triggerGoogleAuth } from '../utils/googleAuth';
 
 export default function RegisterPage() {
-  const { register } = useAuth();
+  const { register, googleLogin } = useAuth();
   const navigate = useNavigate();
 
   const [role, setRole] = useState('user'); // 'user' or 'host'
@@ -21,10 +22,37 @@ export default function RegisterPage() {
     confirmPassword: '',
   });
 
-  const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [showGoogleNotice, setShowGoogleNotice] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
+
+  const handleGoogleSignIn = () => {
+    setError('');
+    triggerGoogleAuth({
+      onStart: () => setGoogleLoading(true),
+      onSuccess: async (credential) => {
+        setGoogleLoading(true);
+        const res = await googleLogin(credential);
+        setGoogleLoading(false);
+        if (res.success) {
+          const userRole = res.user?.role;
+          if (userRole === 'admin') {
+            navigate('/admin');
+          } else if (userRole === 'host') {
+            navigate('/seller');
+          } else {
+            navigate('/dashboard');
+          }
+        } else {
+          setError(res.error || 'Google registration failed. Please try again.');
+        }
+      },
+      onError: (err) => {
+        setGoogleLoading(false);
+        setError(err.message || 'Google registration failed. Please try again.');
+      },
+    });
+  };
 
   const setField = (key, val) => {
     setForm((prev) => ({ ...prev, [key]: val }));
@@ -247,7 +275,8 @@ export default function RegisterPage() {
         {/* Google OAuth Button */}
         <button
           type="button"
-          onClick={() => setShowGoogleNotice(true)}
+          onClick={handleGoogleSignIn}
+          disabled={googleLoading}
           style={{
             width: '100%',
             display: 'flex',
@@ -260,20 +289,14 @@ export default function RegisterPage() {
             background: 'white',
             fontSize: 13,
             fontWeight: 600,
-            cursor: 'pointer',
+            cursor: googleLoading ? 'wait' : 'pointer',
             marginBottom: 14,
             color: '#334155',
+            opacity: googleLoading ? 0.7 : 1,
           }}
         >
-          <FcGoogle size={18} /> Continue with Google
+          <FcGoogle size={18} /> {googleLoading ? 'Signing in with Google...' : 'Continue with Google'}
         </button>
-
-        {showGoogleNotice && (
-          <div className="alert alert-info py-2 px-3 mb-3 small d-flex justify-content-between align-items-center">
-            <span>Google OAuth integration pending (backend API not configured yet).</span>
-            <button className="btn-close btn-sm ms-2" onClick={() => setShowGoogleNotice(false)}></button>
-          </div>
-        )}
 
         {/* Error Alert */}
         {error && (

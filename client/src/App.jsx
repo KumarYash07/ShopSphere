@@ -89,6 +89,14 @@ export default function App() {
                   </ProtectedRoute>
                 }
               />
+              <Route
+                path="/settings"
+                element={
+                  <ProtectedRoute>
+                    <CustomerDashboard />
+                  </ProtectedRoute>
+                }
+              />
 
               {/* Host / Seller Protected Routes */}
               <Route

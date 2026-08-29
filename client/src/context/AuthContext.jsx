@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import {
   loginApi, registerApi, verifyEmailApi, getProfileApi, updateProfileApi,
-  requestEmailChangeApi, verifyEmailChangeApi
+  requestEmailChangeApi, verifyEmailChangeApi, googleAuthApi, createPasswordApi
 } from '../api/authApi';
 
 const AuthContext = createContext(null);
@@ -95,6 +95,34 @@ export function AuthProvider({ children }) {
     }
   };
 
+  const googleLogin = async (credential) => {
+    setAuthError(null);
+    try {
+      const data = await googleAuthApi({ idToken: credential });
+      if (data.success && data.token) {
+        localStorage.setItem('ss_token', data.token);
+        localStorage.setItem('ss_user', JSON.stringify(data.user));
+        setToken(data.token);
+        setUser(data.user);
+        closeAuth();
+        return { success: true, user: data.user, token: data.token, message: data.message };
+      }
+      const errorMsg = data.message || 'Google sign-in failed. Please try again.';
+      setAuthError(errorMsg);
+      return { success: false, error: errorMsg };
+    } catch (err) {
+      console.error('Google Auth API error:', err.response || err);
+      let message = 'Unable to connect to server. Please try again later.';
+      if (err.response?.data?.message) {
+        message = err.response.data.message;
+      } else if (err.response) {
+        message = `Server error (${err.response.status}). Please try again later.`;
+      }
+      setAuthError(message);
+      return { success: false, error: message };
+    }
+  };
+
   const register = async (formData) => {
     setAuthError(null);
     try {
@@ -172,6 +200,31 @@ export function AuthProvider({ children }) {
     }
   };
 
+  const createPassword = async (newPassword, confirmPassword) => {
+    setAuthError(null);
+    try {
+      const data = await createPasswordApi({ newPassword, confirmPassword });
+      if (data.success) {
+        if (data.user) {
+          setUser(data.user);
+          localStorage.setItem('ss_user', JSON.stringify(data.user));
+        } else {
+          setUser(prev => {
+            const updated = prev ? { ...prev, hasPassword: true } : null;
+            if (updated) localStorage.setItem('ss_user', JSON.stringify(updated));
+            return updated;
+          });
+        }
+        return { success: true, message: data.message };
+      }
+      return { success: false, error: data.message || 'Failed to create password' };
+    } catch (err) {
+      const message = err.response?.data?.message || 'Failed to create password. Please try again.';
+      setAuthError(message);
+      return { success: false, error: message };
+    }
+  };
+
   const value = {
     user,
     token,
@@ -184,11 +237,13 @@ export function AuthProvider({ children }) {
     isAdmin: user?.role === 'admin',
     isUser: user?.role === 'user',
     login,
+    googleLogin,
     register,
     verifyEmail,
     updateUserProfile,
     requestEmailChange,
     verifyEmailChange,
+    createPassword,
     logout,
     showLogin,
     showRegister,

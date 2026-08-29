@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FiX, FiUser, FiMail, FiLock, FiPhone, FiShoppingBag, FiCheck, FiArrowLeft, FiMaximize2 } from 'react-icons/fi';
+import { FiX, FiUser, FiMail, FiLock, FiPhone, FiShoppingBag, FiCheck, FiArrowLeft, FiMaximize2, FiAlertCircle } from 'react-icons/fi';
 import { FcGoogle } from 'react-icons/fc';
 import { useAuth } from '../../context/AuthContext';
+import { triggerGoogleAuth } from '../../utils/googleAuth';
 
 const InputField = ({ icon: Icon, label, type = 'text', placeholder, value, onChange, error }) => (
   <div style={{ marginBottom: 10 }}>
@@ -26,15 +27,37 @@ const InputField = ({ icon: Icon, label, type = 'text', placeholder, value, onCh
 const STEPS = ['Personal Details', 'Account Type', 'Verify OTP'];
 
 export default function RegisterModal() {
-  const { showRegister, closeAuth, register, openLogin } = useAuth();
+  const { showRegister, closeAuth, register, googleLogin, openLogin } = useAuth();
   const navigate = useNavigate();
   const [step, setStep] = useState(0);
   const [role, setRole] = useState('customer');
   const [form, setForm] = useState({ name: '', email: '', phone: '', password: '', storeName: '', storeDesc: '', gst: '' });
   const [otp, setOtp] = useState(['', '', '', '']);
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [errors, setErrors] = useState({});
   const otpRefs = useRef([]);
+
+  const handleGoogleSignIn = () => {
+    setErrors({});
+    triggerGoogleAuth({
+      onStart: () => setGoogleLoading(true),
+      onSuccess: async (credential) => {
+        setGoogleLoading(true);
+        const res = await googleLogin(credential);
+        setGoogleLoading(false);
+        if (res.success) {
+          closeAuth();
+        } else {
+          setErrors({ general: res.error || 'Google registration failed. Please try again.' });
+        }
+      },
+      onError: (err) => {
+        setGoogleLoading(false);
+        setErrors({ general: err.message || 'Google registration failed. Please try again.' });
+      },
+    });
+  };
 
   useEffect(() => {
     if (!showRegister) { setStep(0); setRole('customer'); setForm({ name: '', email: '', phone: '', password: '', storeName: '', storeDesc: '', gst: '' }); setOtp(['', '', '', '']); setErrors({}); }
@@ -152,10 +175,25 @@ export default function RegisterModal() {
                     <motion.div key="step1" initial={{ opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -12 }}>
                       <button
                         type="button"
-                        style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 9, border: '2px solid var(--secondary-200)', borderRadius: 'var(--radius-md)', background: 'white', fontSize: 13, fontWeight: 600, cursor: 'pointer', marginBottom: 12, color: 'var(--text-primary)' }}
+                        onClick={handleGoogleSignIn}
+                        disabled={googleLoading}
+                        style={{
+                          width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          gap: 8, padding: 9, border: '2px solid var(--secondary-200)',
+                          borderRadius: 'var(--radius-md)', background: 'white',
+                          fontSize: 13, fontWeight: 600, cursor: googleLoading ? 'wait' : 'pointer',
+                          marginBottom: 12, color: 'var(--text-primary)',
+                          opacity: googleLoading ? 0.7 : 1,
+                        }}
                       >
-                        <FcGoogle size={18} /> Continue with Google
+                        <FcGoogle size={18} /> {googleLoading ? 'Signing in with Google...' : 'Continue with Google'}
                       </button>
+                      {errors.general && (
+                        <div className="alert alert-danger py-2 px-3 mb-3 small d-flex align-items-center gap-2">
+                          <FiAlertCircle size={14} className="flex-shrink-0" />
+                          <span>{errors.general}</span>
+                        </div>
+                      )}
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
                         <div style={{ flex: 1, height: 1, background: 'var(--secondary-200)' }} />
                         <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>or enter details</span>

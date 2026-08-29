@@ -75,7 +75,8 @@ export default function Navbar() {
 
   const userName = user ? (user.firstName ? `${user.firstName} ${user.lastName || ''}`.trim() : user.name || user.email) : '';
   const userRole = user?.role || 'user';
-  const userAvatar = user?.profileImage || `https://ui-avatars.com/api/?name=${encodeURIComponent(userName)}&background=4F46E5&color=fff`;
+  const fallbackAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(userName || 'User')}&background=4F46E5&color=fff`;
+  const userAvatar = user?.profileImage || fallbackAvatar;
 
   return (
     <>
@@ -256,7 +257,16 @@ export default function Navbar() {
                     className="btn btn-light d-flex align-items-center gap-2 rounded-pill px-3 py-1 border"
                     style={{ background: '#f8fafc' }}
                   >
-                    <img src={userAvatar} alt={userName} style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover' }} />
+                    <img
+                      src={userAvatar}
+                      alt={userName || 'User'}
+                      referrerPolicy="no-referrer"
+                      style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover' }}
+                      onError={(e) => {
+                        e.currentTarget.onerror = null;
+                        e.currentTarget.src = fallbackAvatar;
+                      }}
+                    />
                     <span className="fw-semibold text-dark text-truncate" style={{ fontSize: 13, maxWidth: 100 }}>
                       {userName.split(' ')[0]}
                     </span>
@@ -277,12 +287,21 @@ export default function Navbar() {
                           minWidth: 220, padding: 8, zIndex: 1050,
                         }}
                       >
-                        <div className="p-3 border-bottom mb-2">
-                          <div className="fw-bold text-dark text-truncate">{userName}</div>
-                          <div className="small text-muted text-truncate">{user.email}</div>
-                          <span className={`badge ${userRole === 'admin' ? 'bg-danger' : userRole === 'host' ? 'bg-warning text-dark' : 'bg-indigo'} mt-2 text-capitalize`}>
-                            {userRole === 'host' ? 'Seller / Host' : userRole}
-                          </span>
+                        <div className="p-3 border-bottom mb-2 d-flex align-items-center gap-2">
+                          <img
+                            src={userAvatar}
+                            alt={userName || 'User'}
+                            referrerPolicy="no-referrer"
+                            style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }}
+                            onError={(e) => {
+                              e.currentTarget.onerror = null;
+                              e.currentTarget.src = fallbackAvatar;
+                            }}
+                          />
+                          <div className="overflow-hidden">
+                            <div className="fw-bold text-dark text-truncate">{userName}</div>
+                            <div className="small text-muted text-truncate">{user.email}</div>
+                          </div>
                         </div>
 
                         {userRole === 'admin' && (
@@ -303,8 +322,8 @@ export default function Navbar() {
                         <Link to="/orders" className="d-flex align-items-center gap-2 p-2 text-decoration-none text-dark rounded-2 hover-bg-light" onClick={() => setShowProfile(false)}>
                           <FiPackage className="text-primary" /> My Orders
                         </Link>
-                        <Link to="/dashboard?tab=profile" className="d-flex align-items-center gap-2 p-2 text-decoration-none text-dark rounded-2 hover-bg-light" onClick={() => setShowProfile(false)}>
-                          <FiSettings className="text-primary" /> Profile Settings
+                        <Link to="/dashboard?tab=settings" className="d-flex align-items-center gap-2 p-2 text-decoration-none text-dark rounded-2 hover-bg-light" onClick={() => setShowProfile(false)}>
+                          <FiSettings className="text-primary" /> Settings
                         </Link>
 
                         <div className="border-top mt-2 pt-2">

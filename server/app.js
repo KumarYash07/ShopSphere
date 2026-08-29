@@ -13,6 +13,7 @@ import orderRoutes from "./routes/orderRoutes.js";
 import paymentRoutes from "./routes/paymentRoutes.js";
 import adminOrderRoutes from "./routes/adminOrderRoutes.js";
 import hostOrderRoutes from "./routes/hostOrderRoutes.js";
+import wishlistRoutes from "./routes/wishlistRoutes.js";
 
 const app = express();
 
@@ -64,5 +65,8 @@ app.use("/api/admin/orders", adminOrderRoutes);
 
 //Host Orders
 app.use("/api/host/orders", hostOrderRoutes);
+
+//wishlist
+app.use("/api/wishlist", wishlistRoutes);
 
 export default app;

@@ -6,9 +6,10 @@ import {
 } from 'react-icons/fi';
 import { FcGoogle } from 'react-icons/fc';
 import { useAuth } from '../context/AuthContext';
+import { triggerGoogleAuth } from '../utils/googleAuth';
 
 export default function LoginPage() {
-  const { login } = useAuth();
+  const { login, googleLogin } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const location = useLocation();
@@ -23,7 +24,38 @@ export default function LoginPage() {
   const [infoMsg, setInfoMsg] = useState(initialMsg);
   const [loading, setLoading] = useState(false);
   const [remember, setRemember] = useState(true);
-  const [showGoogleNotice, setShowGoogleNotice] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
+
+  const handleGoogleSignIn = () => {
+    setError('');
+    setInfoMsg(null);
+    triggerGoogleAuth({
+      onStart: () => setGoogleLoading(true),
+      onSuccess: async (credential) => {
+        setGoogleLoading(true);
+        const res = await googleLogin(credential);
+        setGoogleLoading(false);
+        if (res.success) {
+          const userRole = res.user?.role;
+          if (redirectUrl) {
+            navigate(redirectUrl);
+          } else if (userRole === 'admin') {
+            navigate('/admin');
+          } else if (userRole === 'host') {
+            navigate('/seller');
+          } else {
+            navigate('/dashboard');
+          }
+        } else {
+          setError(res.error || 'Google sign-in failed. Please try again.');
+        }
+      },
+      onError: (err) => {
+        setGoogleLoading(false);
+        setError(err.message || 'Google sign-in failed. Please try again.');
+      },
+    });
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -180,7 +212,8 @@ export default function LoginPage() {
         {/* Google OAuth Button */}
         <button
           type="button"
-          onClick={() => setShowGoogleNotice(true)}
+          onClick={handleGoogleSignIn}
+          disabled={googleLoading}
           style={{
             width: '100%',
             display: 'flex',
@@ -193,20 +226,14 @@ export default function LoginPage() {
             background: 'white',
             fontSize: 14,
             fontWeight: 600,
-            cursor: 'pointer',
+            cursor: googleLoading ? 'wait' : 'pointer',
             marginBottom: 16,
             color: '#334155',
+            opacity: googleLoading ? 0.7 : 1,
           }}
         >
-          <FcGoogle size={20} /> Continue with Google
+          <FcGoogle size={20} /> {googleLoading ? 'Signing in with Google...' : 'Continue with Google'}
         </button>
-
-        {showGoogleNotice && (
-          <div className="alert alert-info py-2 px-3 mb-3 small d-flex justify-content-between align-items-center">
-            <span>Google OAuth integration pending (backend API not configured yet).</span>
-            <button className="btn-close btn-sm ms-2" onClick={() => setShowGoogleNotice(false)}></button>
-          </div>
-        )}
 
         {/* Divider */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>

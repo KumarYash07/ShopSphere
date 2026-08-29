@@ -4,9 +4,10 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { FiX, FiMail, FiLock, FiEye, FiEyeOff, FiAlertCircle, FiMaximize2 } from 'react-icons/fi';
 import { FcGoogle } from 'react-icons/fc';
 import { useAuth } from '../../context/AuthContext';
+import { triggerGoogleAuth } from '../../utils/googleAuth';
 
 export default function LoginModal() {
-  const { showLogin, closeAuth, login, openRegister } = useAuth();
+  const { showLogin, closeAuth, login, googleLogin, openRegister } = useAuth();
   const navigate = useNavigate();
 
   const [email, setEmail] = useState('');
@@ -14,10 +15,32 @@ export default function LoginModal() {
   const [showPass, setShowPass] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
 
   useEffect(() => {
     if (!showLogin) { setEmail(''); setPassword(''); setError(''); }
   }, [showLogin]);
+
+  const handleGoogleSignIn = () => {
+    setError('');
+    triggerGoogleAuth({
+      onStart: () => setGoogleLoading(true),
+      onSuccess: async (credential) => {
+        setGoogleLoading(true);
+        const res = await googleLogin(credential);
+        setGoogleLoading(false);
+        if (res.success) {
+          closeAuth();
+        } else {
+          setError(res.error || 'Google sign-in failed. Please try again.');
+        }
+      },
+      onError: (err) => {
+        setGoogleLoading(false);
+        setError(err.message || 'Google sign-in failed. Please try again.');
+      },
+    });
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -114,17 +137,20 @@ export default function LoginModal() {
                 {/* Google Button */}
                 <button
                   type="button"
+                  onClick={handleGoogleSignIn}
+                  disabled={googleLoading}
                   style={{
                     width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
                     gap: 8, padding: '10px', border: '2px solid var(--secondary-200)',
                     borderRadius: 'var(--radius-md)', background: 'white',
-                    fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                    fontSize: 13, fontWeight: 600, cursor: googleLoading ? 'wait' : 'pointer',
                     transition: 'all 0.2s', marginBottom: 14, color: 'var(--text-primary)',
+                    opacity: googleLoading ? 0.7 : 1,
                   }}
                   onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--secondary-400)'}
                   onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--secondary-200)'}
                 >
-                  <FcGoogle size={18} /> Continue with Google
+                  <FcGoogle size={18} /> {googleLoading ? 'Signing in with Google...' : 'Continue with Google'}
                 </button>
 
                 {/* Quick Demo Login Buttons */}

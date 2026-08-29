@@ -24,8 +24,11 @@ const userSchema = new mongoose.Schema(
 
     phone: {
       type: String,
-      required: true,
+      required: function () {
+        return this.authProvider === "local";
+      },
       unique: true,
+      sparse: true,
       trim: true,
     },
 
@@ -67,6 +70,25 @@ const userSchema = new mongoose.Schema(
       type: String,
       enum: ["active", "pending", "blocked"],
       default: "active",
+    },
+
+    notificationPreferences: {
+      orderUpdates: {
+        type: Boolean,
+        default: true,
+      },
+      deliveryUpdates: {
+        type: Boolean,
+        default: true,
+      },
+      promotional: {
+        type: Boolean,
+        default: false,
+      },
+      emailNotifications: {
+        type: Boolean,
+        default: true,
+      },
     },
   },
   {

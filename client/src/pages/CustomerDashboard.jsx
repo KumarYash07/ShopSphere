@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import {
   FiGrid, FiPackage, FiHeart, FiMapPin, FiUser,
   FiSettings, FiLogOut, FiShoppingCart, FiPlus,
-  FiTrash2, FiEdit, FiCheckCircle, FiX, FiAlertCircle
+  FiTrash2, FiEdit, FiCheckCircle, FiX, FiAlertCircle,
+  FiEye, FiEyeOff
 } from 'react-icons/fi';
 import Navbar from '../components/navbar/Navbar';
 import Footer from '../components/footer/Footer';
@@ -19,14 +20,20 @@ import {
   setDefaultAddressApi
 } from '../api/addressApi';
 import { getMyOrdersApi } from '../api/orderApi';
+import {
+  changePasswordApi,
+  getNotificationPreferencesApi,
+  updateNotificationPreferencesApi
+} from '../api/authApi';
 
 export default function CustomerDashboard() {
-  const { user, role, logout, updateUserProfile, requestEmailChange, verifyEmailChange } = useAuth();
+  const { user, role, logout, updateUserProfile, requestEmailChange, verifyEmailChange, createPassword } = useAuth();
   const { cart } = useCart();
   const { wishlist } = useWishlist();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
 
-  const initialTab = searchParams.get('tab') || 'profile';
+  const initialTab = searchParams.get('tab') || (location.pathname === '/settings' ? 'settings' : 'profile');
   const [activeTab, setActiveTab] = useState(initialTab);
 
   // Email Change Modal State
@@ -85,11 +92,11 @@ export default function CustomerDashboard() {
 
   // Sync active tab with searchParams URL updates
   useEffect(() => {
-    const tabFromUrl = searchParams.get('tab');
+    const tabFromUrl = searchParams.get('tab') || (location.pathname === '/settings' ? 'settings' : null);
     if (tabFromUrl) {
       setActiveTab(tabFromUrl);
     }
-  }, [searchParams]);
+  }, [searchParams, location.pathname]);
 
   // Profile Edit State
   const [isEditingProfile, setIsEditingProfile] = useState(false);
@@ -148,6 +155,10 @@ export default function CustomerDashboard() {
     newPassword: '',
     confirmPassword: '',
   });
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [changingPassword, setChangingPassword] = useState(false);
 
   const [notificationPreferences, setNotificationPreferences] = useState({
     orderUpdates: true,
@@ -155,27 +166,134 @@ export default function CustomerDashboard() {
     promotional: false,
     emailNotifications: true,
   });
+  const [loadingPreferences, setLoadingPreferences] = useState(false);
+  const [savingPreference, setSavingPreference] = useState(null);
 
-  const handleChangePasswordSubmit = (e) => {
+  const fetchPreferences = async () => {
+    setLoadingPreferences(true);
+    try {
+      const res = await getNotificationPreferencesApi();
+      if (res.success && res.preferences) {
+        setNotificationPreferences(res.preferences);
+      }
+    } catch (err) {
+      console.error('Failed to load notification preferences:', err);
+    } finally {
+      setLoadingPreferences(false);
+    }
+  };
+
+  const handleChangePasswordSubmit = async (e) => {
     e.preventDefault();
+    // 1. Frontend validation: required fields
     if (!passwordForm.currentPassword || !passwordForm.newPassword || !passwordForm.confirmPassword) {
       showToast('danger', 'Please fill in all password fields.');
+      return;
+    }
+    // 2. Frontend validation: password length
+    if (passwordForm.newPassword.length < 6) {
+      showToast('danger', 'New password must be at least 6 characters long.');
+      return;
+    }
+    // 3. Frontend validation: matching passwords
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      showToast('danger', 'New password and confirm password do not match.');
+      return;
+    }
+    // 4. Frontend validation: different from current password
+    if (passwordForm.currentPassword === passwordForm.newPassword) {
+      showToast('danger', 'New password must be different from current password.');
+      return;
+    }
+
+    setChangingPassword(true);
+    try {
+      const res = await changePasswordApi({
+        currentPassword: passwordForm.currentPassword,
+        newPassword: passwordForm.newPassword,
+        confirmPassword: passwordForm.confirmPassword,
+      });
+
+      if (res.success) {
+        showToast('success', res.message || 'Password changed successfully!');
+        setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+        setShowCurrentPassword(false);
+        setShowNewPassword(false);
+        setShowConfirmPassword(false);
+      } else {
+        showToast('danger', res.message || 'Failed to change password.');
+      }
+    } catch (err) {
+      const errMsg = err.response?.data?.message || 'Failed to change password.';
+      showToast('danger', errMsg);
+    } finally {
+      setChangingPassword(false);
+    }
+  };
+
+  const handleCreatePasswordSubmit = async (e) => {
+    e.preventDefault();
+    if (!passwordForm.newPassword || !passwordForm.confirmPassword) {
+      showToast('danger', 'Please fill in both password fields.');
+      return;
+    }
+    if (passwordForm.newPassword.length < 6) {
+      showToast('danger', 'Password must be at least 6 characters long.');
       return;
     }
     if (passwordForm.newPassword !== passwordForm.confirmPassword) {
       showToast('danger', 'New password and confirm password do not match.');
       return;
     }
-    showToast('info', 'ℹ️ Password update feature is currently unavailable on the server.');
-    setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+
+    setChangingPassword(true);
+    try {
+      const res = await createPassword(passwordForm.newPassword, passwordForm.confirmPassword);
+      if (res.success) {
+        showToast('success', res.message || 'Password created successfully! You can now sign in with email and password.');
+        setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+        setShowNewPassword(false);
+        setShowConfirmPassword(false);
+      } else {
+        showToast('danger', res.error || 'Failed to create password.');
+      }
+    } catch (err) {
+      const errMsg = err.response?.data?.message || err.message || 'Failed to create password.';
+      showToast('danger', errMsg);
+    } finally {
+      setChangingPassword(false);
+    }
   };
 
-  const handleToggleNotification = (key) => {
-    setNotificationPreferences(prev => {
-      const next = { ...prev, [key]: !prev[key] };
-      showToast('success', 'Notification preference updated.');
-      return next;
-    });
+  const handleToggleNotification = async (key) => {
+    const previousValue = notificationPreferences[key];
+    const updatedValue = !previousValue;
+    const updatedPrefs = { ...notificationPreferences, [key]: updatedValue };
+
+    // Optimistic UI update
+    setNotificationPreferences(updatedPrefs);
+    setSavingPreference(key);
+
+    try {
+      const res = await updateNotificationPreferencesApi({ [key]: updatedValue });
+      if (res.success) {
+        showToast('success', res.message || 'Notification preference updated.');
+        if (res.preferences) {
+          setNotificationPreferences(res.preferences);
+        }
+      } else {
+        // Revert on failure
+        setNotificationPreferences(prev => ({ ...prev, [key]: previousValue }));
+        showToast('danger', res.message || 'Failed to update notification preference.');
+      }
+    } catch (err) {
+      // Revert on failure
+      setNotificationPreferences(prev => ({ ...prev, [key]: previousValue }));
+      const errMsg = err.response?.data?.message || 'Failed to update notification preference.';
+      showToast('danger', errMsg);
+    } finally {
+      setSavingPreference(null);
+    }
   };
 
   // Address Book State
@@ -241,8 +359,11 @@ export default function CustomerDashboard() {
       fetchAddresses();
     } else if (activeTab === 'orders') {
       fetchOrdersList();
+    } else if (activeTab === 'settings') {
+      fetchPreferences();
     }
   }, [activeTab]);
+
 
   const handleOpenAddModal = () => {
     setEditingAddress(null);
@@ -331,7 +452,8 @@ export default function CustomerDashboard() {
   };
 
   const userName = user ? (user.firstName ? `${user.firstName} ${user.lastName || ''}`.trim() : user.name || user.email) : '';
-  const userAvatar = user?.profileImage || `https://ui-avatars.com/api/?name=${encodeURIComponent(userName)}&background=4F46E5&color=fff`;
+  const fallbackAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(userName || 'User')}&background=4F46E5&color=fff`;
+  const userAvatar = user?.profileImage || fallbackAvatar;
   const userRole = user?.role || role || 'user';
   const roleBadgeLabel = userRole === 'admin' ? 'Admin' : userRole === 'host' ? 'Host / Seller' : 'Customer Account';
 
@@ -340,6 +462,30 @@ export default function CustomerDashboard() {
       <Navbar />
       <div className="bg-light min-vh-100 py-4">
         <div className="container">
+
+          {/* Floating Feedback Toast */}
+          {feedback.message && (
+            <div className="position-fixed top-0 end-0 p-3" style={{ zIndex: 1090, marginTop: 70 }}>
+              <div
+                className={`toast show align-items-center text-white bg-${feedback.type === 'danger' ? 'danger' : feedback.type === 'success' ? 'success' : feedback.type === 'info' ? 'info' : 'primary'} border-0 shadow-lg rounded-3`}
+                role="alert"
+                style={{ minWidth: 280 }}
+              >
+                <div className="d-flex p-2 align-items-center">
+                  <div className="toast-body d-flex align-items-center gap-2 fw-semibold py-1">
+                    <FiAlertCircle size={18} className="flex-shrink-0" />
+                    <span>{feedback.message}</span>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn-close btn-close-white me-2 m-auto"
+                    onClick={() => setFeedback({ type: '', message: '' })}
+                    aria-label="Close"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Feedback Banner */}
           {feedback.message && (
@@ -355,9 +501,14 @@ export default function CustomerDashboard() {
             <div className="d-flex align-items-center gap-3">
               <img
                 src={userAvatar}
-                alt={userName}
+                alt={userName || 'User Profile'}
+                referrerPolicy="no-referrer"
                 className="rounded-circle object-fit-cover border border-3 border-primary"
                 style={{ width: 64, height: 64 }}
+                onError={(e) => {
+                  e.currentTarget.onerror = null;
+                  e.currentTarget.src = fallbackAvatar;
+                }}
               />
               <div>
                 <h3 className="fw-bold text-dark mb-0">{userName}</h3>
@@ -445,6 +596,34 @@ export default function CustomerDashboard() {
                         </button>
                       </div>
                     )}
+                  </div>
+
+                  {/* Profile Photo Preview */}
+                  <div className="d-flex align-items-center gap-3 p-3 bg-light rounded-4 mb-4 border">
+                    <img
+                      src={userAvatar}
+                      alt={userName || 'Profile Picture'}
+                      referrerPolicy="no-referrer"
+                      className="rounded-circle object-fit-cover border border-2 border-primary"
+                      style={{ width: 64, height: 64 }}
+                      onError={(e) => {
+                        e.currentTarget.onerror = null;
+                        e.currentTarget.src = fallbackAvatar;
+                      }}
+                    />
+                    <div>
+                      <h6 className="fw-bold text-dark mb-1">{userName}</h6>
+                      <p className="text-muted small mb-1">{user?.email}</p>
+                      {user?.authProvider === 'google' || user?.googleId ? (
+                        <span className="badge bg-white text-dark border small d-inline-flex align-items-center gap-1 shadow-xs">
+                          <span>Google Profile Image</span>
+                        </span>
+                      ) : (
+                        <span className="badge bg-secondary-subtle text-secondary small">
+                          Profile Avatar
+                        </span>
+                      )}
+                    </div>
                   </div>
 
                   <form onSubmit={handleSaveProfileSubmit}>
@@ -655,6 +834,42 @@ export default function CustomerDashboard() {
                 </div>
               )}
 
+              {/* TAB: WISHLIST */}
+              {activeTab === 'wishlist' && (
+                <div className="card border-0 shadow-sm rounded-4 p-4 bg-white">
+                  <div className="d-flex align-items-center justify-content-between mb-4">
+                    <div>
+                      <h4 className="fw-bold text-dark mb-1">My Wishlist ({wishlist.length})</h4>
+                      <p className="small text-muted mb-0">Products you have saved to purchase later.</p>
+                    </div>
+                    {wishlist.length > 0 && (
+                      <Link to="/products" className="btn btn-outline-primary rounded-pill btn-sm fw-semibold">
+                        Continue Shopping
+                      </Link>
+                    )}
+                  </div>
+
+                  {wishlist.length === 0 ? (
+                    <div className="text-center py-5 bg-light rounded-4">
+                      <div className="display-4 text-muted mb-2">❤️</div>
+                      <h5 className="fw-bold text-dark">Your Wishlist is Empty</h5>
+                      <p className="text-muted small">Explore our catalog and save items you love.</p>
+                      <Link to="/products" className="btn btn-primary rounded-pill btn-sm fw-bold mt-2" style={{ background: '#4F46E5' }}>
+                        Browse Products
+                      </Link>
+                    </div>
+                  ) : (
+                    <div className="row g-3">
+                      {wishlist.map((prod) => (
+                        <div key={prod._id || prod.id} className="col-12 col-sm-6 col-lg-4">
+                          <ProductCard product={prod} />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* TAB: SAVED ADDRESSES */}
               {activeTab === 'addresses' && (
                 <div className="card border-0 shadow-sm rounded-4 p-4 bg-white">
@@ -746,124 +961,204 @@ export default function CustomerDashboard() {
               )}
 
               {/* TAB: SETTINGS */}
-              {activeTab === 'settings' && (
-                <div className="d-flex flex-column gap-4">
-                  {/* Section A: Password & Security */}
-                  <div className="card border-0 shadow-sm rounded-4 p-4 bg-white">
-                    <h5 className="fw-bold text-dark mb-1">Password & Security</h5>
-                    <p className="text-muted small mb-4">Manage your login password and account credentials.</p>
+              {activeTab === 'settings' && (() => {
+                const isGoogleWithoutPassword = user?.authProvider === 'google' && user?.hasPassword === false;
+                return (
+                  <div className="d-flex flex-column gap-4">
+                    {/* Section A: Password & Security */}
+                    <div className="card border-0 shadow-sm rounded-4 p-4 bg-white">
+                      <div className="d-flex align-items-center justify-content-between mb-1">
+                        <h5 className="fw-bold text-dark mb-0">
+                          {isGoogleWithoutPassword ? 'Create Account Password' : 'Password & Security'}
+                        </h5>
+                        {user?.authProvider === 'google' && (
+                          <span className="badge bg-light text-dark border small d-inline-flex align-items-center gap-1">
+                            <span>🌐</span> Google Account
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-muted small mb-4">
+                        {isGoogleWithoutPassword
+                          ? 'Your account was created via Google Sign-In. Create a password so you can also log in directly using your email and password.'
+                          : 'Manage your login password and account security.'}
+                      </p>
 
-                    <form onSubmit={handleChangePasswordSubmit}>
-                      <div className="row g-3" style={{ maxWidth: 600 }}>
-                        <div className="col-12">
-                          <label className="form-label text-muted small fw-semibold">Current Password</label>
-                          <input
-                            type="password"
-                            className="form-control"
-                            placeholder="••••••••"
-                            value={passwordForm.currentPassword}
-                            onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })}
-                          />
+                      <form onSubmit={isGoogleWithoutPassword ? handleCreatePasswordSubmit : handleChangePasswordSubmit}>
+                        <div className="row g-3" style={{ maxWidth: 600 }}>
+                          {!isGoogleWithoutPassword && (
+                            <div className="col-12">
+                              <label className="form-label text-muted small fw-semibold">Current Password</label>
+                              <div className="position-relative">
+                                <input
+                                  type={showCurrentPassword ? "text" : "password"}
+                                  className="form-control pe-5"
+                                  placeholder="••••••••"
+                                  value={passwordForm.currentPassword}
+                                  onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })}
+                                  disabled={changingPassword}
+                                />
+                                <button
+                                  type="button"
+                                  className="btn btn-link position-absolute end-0 top-50 translate-middle-y text-muted pe-3 border-0 shadow-none d-flex align-items-center"
+                                  onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                                  tabIndex={-1}
+                                  aria-label={showCurrentPassword ? "Hide current password" : "Show current password"}
+                                  style={{ background: 'transparent' }}
+                                >
+                                  {showCurrentPassword ? <FiEyeOff size={18} /> : <FiEye size={18} />}
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                          <div className="col-md-6">
+                            <label className="form-label text-muted small fw-semibold">
+                              {isGoogleWithoutPassword ? 'Password' : 'New Password'}
+                            </label>
+                            <div className="position-relative">
+                              <input
+                                type={showNewPassword ? "text" : "password"}
+                                className="form-control pe-5"
+                                placeholder="••••••••"
+                                value={passwordForm.newPassword}
+                                onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
+                                disabled={changingPassword}
+                              />
+                              <button
+                                type="button"
+                                className="btn btn-link position-absolute end-0 top-50 translate-middle-y text-muted pe-3 border-0 shadow-none d-flex align-items-center"
+                                onClick={() => setShowNewPassword(!showNewPassword)}
+                                tabIndex={-1}
+                                aria-label={showNewPassword ? "Hide new password" : "Show new password"}
+                                style={{ background: 'transparent' }}
+                              >
+                                {showNewPassword ? <FiEyeOff size={18} /> : <FiEye size={18} />}
+                              </button>
+                            </div>
+                          </div>
+                          <div className="col-md-6">
+                            <label className="form-label text-muted small fw-semibold">
+                              {isGoogleWithoutPassword ? 'Confirm Password' : 'Confirm New Password'}
+                            </label>
+                            <div className="position-relative">
+                              <input
+                                type={showConfirmPassword ? "text" : "password"}
+                                className="form-control pe-5"
+                                placeholder="••••••••"
+                                value={passwordForm.confirmPassword}
+                                onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
+                                disabled={changingPassword}
+                              />
+                              <button
+                                type="button"
+                                className="btn btn-link position-absolute end-0 top-50 translate-middle-y text-muted pe-3 border-0 shadow-none d-flex align-items-center"
+                                onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                                tabIndex={-1}
+                                aria-label={showConfirmPassword ? "Hide confirm password" : "Show confirm password"}
+                                style={{ background: 'transparent' }}
+                              >
+                                {showConfirmPassword ? <FiEyeOff size={18} /> : <FiEye size={18} />}
+                              </button>
+                            </div>
+                          </div>
+                          <div className="col-12 mt-3">
+                            <button
+                              type="submit"
+                              className="btn btn-primary rounded-pill px-4 fw-bold d-inline-flex align-items-center gap-2"
+                              style={{ background: '#4F46E5', borderColor: '#4F46E5' }}
+                              disabled={changingPassword}
+                            >
+                              {changingPassword ? (
+                                <>
+                                  <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                                  <span>{isGoogleWithoutPassword ? 'Creating Password...' : 'Changing Password...'}</span>
+                                </>
+                              ) : (
+                                isGoogleWithoutPassword ? 'Create Password' : 'Change Password'
+                              )}
+                            </button>
+                          </div>
                         </div>
-                        <div className="col-md-6">
-                          <label className="form-label text-muted small fw-semibold">New Password</label>
-                          <input
-                            type="password"
-                            className="form-control"
-                            placeholder="••••••••"
-                            value={passwordForm.newPassword}
-                            onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
-                          />
+                      </form>
+                    </div>
+
+                    {/* Section B: Notifications */}
+                    <div className="card border-0 shadow-sm rounded-4 p-4 bg-white">
+                      <h5 className="fw-bold text-dark mb-1">Notification Preferences</h5>
+                      <p className="text-muted small mb-4">Choose how you want to receive alerts and notifications.</p>
+
+                      <div className="d-flex flex-column gap-3" style={{ maxWidth: 600 }}>
+                        {loadingPreferences ? (
+                          <div className="text-center py-4 text-muted">
+                            <div className="spinner-border spinner-border-sm text-primary me-2" role="status"></div>
+                            Loading notification preferences...
+                          </div>
+                        ) : (
+                          [
+                            { key: 'orderUpdates', label: 'Order Updates', desc: 'Receive real-time updates when order status changes.' },
+                            { key: 'deliveryUpdates', label: 'Delivery Updates', desc: 'Get SMS and tracking alerts for active shipments.' },
+                            { key: 'promotional', label: 'Promotional Notifications', desc: 'Receive special discount vouchers and sale announcements.' },
+                            { key: 'emailNotifications', label: 'Email Notifications', desc: 'Receive summary invoices and account updates via email.' },
+                          ].map(item => (
+                            <div key={item.key} className="d-flex align-items-center justify-content-between p-3 rounded-3 border bg-light">
+                              <div>
+                                <div className="fw-bold text-dark small">{item.label}</div>
+                                <div className="text-muted small" style={{ fontSize: 12 }}>{item.desc}</div>
+                              </div>
+                              <div className="form-check form-switch m-0 ms-3 d-flex align-items-center gap-2">
+                                {savingPreference === item.key && (
+                                  <span className="spinner-border spinner-border-sm text-primary" style={{ width: 14, height: 14 }} role="status"></span>
+                                )}
+                                <input
+                                  className="form-check-input"
+                                  type="checkbox"
+                                  role="switch"
+                                  style={{ width: 42, height: 22, cursor: savingPreference === item.key ? 'wait' : 'pointer' }}
+                                  checked={Boolean(notificationPreferences[item.key])}
+                                  disabled={savingPreference === item.key}
+                                  onChange={() => handleToggleNotification(item.key)}
+                                />
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Section C: Account Security */}
+                    <div className="card border-0 shadow-sm rounded-4 p-4 bg-white">
+                      <h5 className="fw-bold text-dark mb-1">Account Security Overview</h5>
+                      <p className="text-muted small mb-4">Summary of your account status and credentials.</p>
+
+                      <div className="row g-3">
+                        <div className="col-md-4">
+                          <div className="p-3 bg-light rounded-3 border">
+                            <div className="text-muted small fw-semibold mb-1">Email Verification</div>
+                            <span className={`badge ${user?.isEmailVerified ? 'bg-success' : 'bg-warning text-dark'}`}>
+                              {user?.isEmailVerified ? '✓ Verified' : 'Pending Verification'}
+                            </span>
+                          </div>
                         </div>
-                        <div className="col-md-6">
-                          <label className="form-label text-muted small fw-semibold">Confirm New Password</label>
-                          <input
-                            type="password"
-                            className="form-control"
-                            placeholder="••••••••"
-                            value={passwordForm.confirmPassword}
-                            onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
-                          />
+                        <div className="col-md-4">
+                          <div className="p-3 bg-light rounded-3 border">
+                            <div className="text-muted small fw-semibold mb-1">Account Status</div>
+                            <span className="badge bg-info text-dark text-capitalize">
+                              {user?.status || 'Active'}
+                            </span>
+                          </div>
                         </div>
-                        <div className="col-12 mt-3">
-                          <button
-                            type="submit"
-                            className="btn btn-primary rounded-pill px-4 fw-bold"
-                            style={{ background: '#4F46E5', borderColor: '#4F46E5' }}
-                          >
-                            Change Password
-                          </button>
+                        <div className="col-md-4">
+                          <div className="p-3 bg-light rounded-3 border">
+                            <div className="text-muted small fw-semibold mb-1">Logged-in Role</div>
+                            <span className="badge bg-primary-subtle text-primary fw-bold text-capitalize" style={{ background: '#eef2ff', color: '#4F46E5' }}>
+                              {roleBadgeLabel}
+                            </span>
+                          </div>
                         </div>
                       </div>
-                    </form>
-                  </div>
-
-                  {/* Section B: Notifications */}
-                  <div className="card border-0 shadow-sm rounded-4 p-4 bg-white">
-                    <h5 className="fw-bold text-dark mb-1">Notification Preferences</h5>
-                    <p className="text-muted small mb-4">Choose how you want to receive alerts and notifications.</p>
-
-                    <div className="d-flex flex-column gap-3" style={{ maxWidth: 600 }}>
-                      {[
-                        { key: 'orderUpdates', label: 'Order Updates', desc: 'Receive real-time updates when order status changes.' },
-                        { key: 'deliveryUpdates', label: 'Delivery Updates', desc: 'Get SMS and tracking alerts for active shipments.' },
-                        { key: 'promotional', label: 'Promotional Notifications', desc: 'Receive special discount vouchers and sale announcements.' },
-                        { key: 'emailNotifications', label: 'Email Notifications', desc: 'Receive summary invoices and account updates via email.' },
-                      ].map(item => (
-                        <div key={item.key} className="d-flex align-items-center justify-content-between p-3 rounded-3 border bg-light">
-                          <div>
-                            <div className="fw-bold text-dark small">{item.label}</div>
-                            <div className="text-muted small" style={{ fontSize: 12 }}>{item.desc}</div>
-                          </div>
-                          <div className="form-check form-switch m-0 ms-3">
-                            <input
-                              className="form-check-input"
-                              type="checkbox"
-                              role="switch"
-                              style={{ width: 42, height: 22, cursor: 'pointer' }}
-                              checked={notificationPreferences[item.key]}
-                              onChange={() => handleToggleNotification(item.key)}
-                            />
-                          </div>
-                        </div>
-                      ))}
                     </div>
                   </div>
-
-                  {/* Section C: Account Security */}
-                  <div className="card border-0 shadow-sm rounded-4 p-4 bg-white">
-                    <h5 className="fw-bold text-dark mb-1">Account Security Overview</h5>
-                    <p className="text-muted small mb-4">Summary of your account status and credentials.</p>
-
-                    <div className="row g-3">
-                      <div className="col-md-4">
-                        <div className="p-3 bg-light rounded-3 border">
-                          <div className="text-muted small fw-semibold mb-1">Email Verification</div>
-                          <span className={`badge ${user?.isEmailVerified ? 'bg-success' : 'bg-warning text-dark'}`}>
-                            {user?.isEmailVerified ? '✓ Verified' : 'Pending Verification'}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="col-md-4">
-                        <div className="p-3 bg-light rounded-3 border">
-                          <div className="text-muted small fw-semibold mb-1">Account Status</div>
-                          <span className="badge bg-info text-dark text-capitalize">
-                            {user?.status || 'Active'}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="col-md-4">
-                        <div className="p-3 bg-light rounded-3 border">
-                          <div className="text-muted small fw-semibold mb-1">Logged-in Role</div>
-                          <span className="badge bg-primary-subtle text-primary fw-bold text-capitalize" style={{ background: '#eef2ff', color: '#4F46E5' }}>
-                            {roleBadgeLabel}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
+                );
+              })()}
             </div>
           </div>
 

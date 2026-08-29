@@ -1,4 +1,5 @@
 import bcrypt from "bcryptjs";
+import { OAuth2Client } from "google-auth-library";
 
 import User from "../models/User.js";
 import EmailOTP from "../models/EmailOTP.js";
@@ -330,6 +331,12 @@ export const loginUser = async (req, res) => {
         status: user.status,
         isEmailVerified: user.isEmailVerified,
         profileImage: user.profileImage,
+        notificationPreferences: user.notificationPreferences || {
+          orderUpdates: true,
+          deliveryUpdates: true,
+          promotional: false,
+          emailNotifications: true,
+        },
       },
     });
   } catch (error) {
@@ -341,6 +348,100 @@ export const loginUser = async (req, res) => {
     });
   }
 };
+
+
+// Create Password for Google users
+export const createPassword = async (req, res) => {
+  try {
+    const { newPassword, confirmPassword } = req.body;
+
+    if (!newPassword || !confirmPassword) {
+      return res.status(400).json({
+        success: false,
+        message: "New password and confirm password are required",
+      });
+    }
+
+    if (newPassword !== confirmPassword) {
+      return res.status(400).json({
+        success: false,
+        message: "Passwords do not match",
+      });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: "Password must be at least 6 characters long",
+      });
+    }
+
+    // User protect middleware se milega
+    const user = await User.findById(req.user._id || req.user.id);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    // Sirf Google users ke liye
+    if (user.authProvider !== "google") {
+      return res.status(400).json({
+        success: false,
+        message: "Password already exists. Please use Change Password.",
+      });
+    }
+
+    // Agar already password create kar chuka hai
+    if (user.password) {
+      return res.status(400).json({
+        success: false,
+        message: "Password already exists. Please use Change Password.",
+      });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 12);
+
+    user.password = hashedPassword;
+
+    await user.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Password created successfully",
+      user: {
+        id: user._id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        phone: user.phone || null,
+        role: user.role,
+        status: user.status,
+        isEmailVerified: user.isEmailVerified,
+        profileImage: user.profileImage,
+        authProvider: user.authProvider,
+        hasPassword: true,
+        notificationPreferences: user.notificationPreferences || {
+          orderUpdates: true,
+          deliveryUpdates: true,
+          promotional: false,
+          emailNotifications: true,
+        },
+      },
+    });
+  } catch (error) {
+    console.error("Create Password Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Server error while creating password",
+    });
+  }
+};
+
+
 
 
 //login Users
@@ -411,6 +512,12 @@ export const updateProfile = async (req, res) => {
         status: user.status,
         isEmailVerified: user.isEmailVerified,
         profileImage: user.profileImage,
+        notificationPreferences: user.notificationPreferences || {
+          orderUpdates: true,
+          deliveryUpdates: true,
+          promotional: false,
+          emailNotifications: true,
+        },
       },
     });
   } catch (error) {
@@ -626,6 +733,12 @@ export const verifyEmailChange = async (req, res) => {
         status: user.status,
         isEmailVerified: user.isEmailVerified,
         profileImage: user.profileImage,
+        notificationPreferences: user.notificationPreferences || {
+          orderUpdates: true,
+          deliveryUpdates: true,
+          promotional: false,
+          emailNotifications: true,
+        },
       },
     });
   } catch (error) {
@@ -637,3 +750,313 @@ export const verifyEmailChange = async (req, res) => {
     });
   }
 };
+
+// Change Password
+export const changePassword = async (req, res) => {
+  try {
+    const { currentPassword, newPassword, confirmPassword } = req.body;
+
+    // 1. Validate required fields
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        message: "Current password and new password are required.",
+      });
+    }
+
+    if (confirmPassword !== undefined && newPassword !== confirmPassword) {
+      return res.status(400).json({
+        success: false,
+        message: "New password and confirm password do not match.",
+      });
+    }
+
+    // 2. Validate password length
+    if (newPassword.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: "New password must be at least 6 characters long.",
+      });
+    }
+
+    if (currentPassword === newPassword) {
+      return res.status(400).json({
+        success: false,
+        message: "New password must be different from your current password.",
+      });
+    }
+
+    // 3. Find user
+    const user = await User.findById(req.user._id);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found.",
+      });
+    }
+
+    if (user.authProvider === "google" && !user.password) {
+      return res.status(400).json({
+        success: false,
+        message: "Google sign-in accounts cannot change password here.",
+      });
+    }
+
+    // 4. Check current password
+    const isCurrentValid = await bcrypt.compare(currentPassword, user.password);
+
+    if (!isCurrentValid) {
+      return res.status(400).json({
+        success: false,
+        message: "Current password is incorrect.",
+      });
+    }
+
+    // 5. Hash new password
+    const hashedPassword = await bcrypt.hash(newPassword, 12);
+    user.password = hashedPassword;
+    await user.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Password changed successfully.",
+    });
+  } catch (error) {
+    console.error("Change Password Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Server error while changing password.",
+    });
+  }
+};
+
+// Google ID Token Verification Helper
+const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+
+const verifyGoogleToken = async (idToken) => {
+  if (process.env.GOOGLE_CLIENT_ID) {
+    try {
+      const ticket = await googleClient.verifyIdToken({
+        idToken,
+        audience: process.env.GOOGLE_CLIENT_ID,
+      });
+      return ticket.getPayload();
+    } catch (e) {
+      console.warn("OAuth2Client verifyIdToken failed, falling back to tokeninfo:", e.message);
+    }
+  }
+
+  // Fallback verification via Google's tokeninfo endpoint
+  const response = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`);
+  if (!response.ok) {
+    throw new Error("Invalid Google token");
+  }
+  const payload = await response.json();
+  if (!payload || !payload.email || !payload.sub) {
+    throw new Error("Invalid token payload structure");
+  }
+  return payload;
+};
+
+// Google Authentication (Login / Registration / Account Linking)
+export const googleAuth = async (req, res) => {
+  try {
+    const { idToken, credential, token } = req.body;
+    const rawToken = idToken || credential || token;
+
+    if (!rawToken) {
+      return res.status(400).json({
+        success: false,
+        message: "Google token is required.",
+      });
+    }
+
+    let payload;
+    try {
+      payload = await verifyGoogleToken(rawToken);
+    } catch (err) {
+      console.error("Google Token Verification Error:", err.message);
+      return res.status(401).json({
+        success: false,
+        message: "Google sign-in failed. Please try again.",
+      });
+    }
+
+    const {
+      sub: googleId,
+      email,
+      email_verified,
+      given_name,
+      family_name,
+      name,
+      picture,
+    } = payload;
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: "Unable to retrieve email from Google account.",
+      });
+    }
+
+    const normalizedEmail = email.toLowerCase().trim();
+    const firstName = given_name || name?.split(" ")[0] || "User";
+    const lastName = family_name || name?.split(" ").slice(1).join(" ") || "";
+    const profileImage = picture || null;
+    const isEmailVerified = email_verified === true || email_verified === "true" || email_verified === 1;
+
+    // 1. Find user by googleId
+    let user = await User.findOne({ googleId });
+
+    if (user) {
+      // Check account status
+      if (user.status === "blocked") {
+        return res.status(403).json({
+          success: false,
+          message: "Your account has been blocked",
+        });
+      }
+
+      // Host approval check
+      if (user.role === "host" && user.status === "pending") {
+        return res.status(403).json({
+          success: false,
+          message: "Your seller account is awaiting admin approval",
+        });
+      }
+
+      if (profileImage) {
+        user.profileImage = profileImage;
+        await user.save();
+      }
+
+      const jwtToken = generateToken(user);
+
+      return res.status(200).json({
+        success: true,
+        message: "Login successful",
+        token: jwtToken,
+        user: {
+          id: user._id,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          email: user.email,
+          phone: user.phone || null,
+          role: user.role,
+          status: user.status,
+          isEmailVerified: user.isEmailVerified,
+          profileImage: user.profileImage,
+          notificationPreferences: user.notificationPreferences || {
+            orderUpdates: true,
+            deliveryUpdates: true,
+            promotional: false,
+            emailNotifications: true,
+          },
+        },
+      });
+    }
+
+    // 2. Check if email already belongs to an existing account (local or google)
+    const existingUser = await User.findOne({ email: normalizedEmail });
+
+    if (existingUser) {
+      // Check account status
+      if (existingUser.status === "blocked") {
+        return res.status(403).json({
+          success: false,
+          message: "Your account has been blocked",
+        });
+      }
+
+      // Host approval check
+      if (existingUser.role === "host" && existingUser.status === "pending") {
+        return res.status(403).json({
+          success: false,
+          message: "Your seller account is awaiting admin approval",
+        });
+      }
+
+      // Link Google ID to existing account without overwriting password or modifying role/status
+      existingUser.googleId = googleId;
+      if (profileImage) {
+        existingUser.profileImage = profileImage;
+      }
+      existingUser.isEmailVerified = true;
+      await existingUser.save();
+
+      const jwtToken = generateToken(existingUser);
+
+      return res.status(200).json({
+        success: true,
+        message: "Login successful",
+        token: jwtToken,
+        user: {
+          id: existingUser._id,
+          firstName: existingUser.firstName,
+          lastName: existingUser.lastName,
+          email: existingUser.email,
+          phone: existingUser.phone || null,
+          role: existingUser.role,
+          status: existingUser.status,
+          isEmailVerified: existingUser.isEmailVerified,
+          profileImage: existingUser.profileImage,
+          notificationPreferences: existingUser.notificationPreferences || {
+            orderUpdates: true,
+            deliveryUpdates: true,
+            promotional: false,
+            emailNotifications: true,
+          },
+        },
+      });
+    }
+
+    // 3. Create new user with role "user" (default customer)
+    user = await User.create({
+      firstName: firstName.trim(),
+      lastName: lastName.trim(),
+      email: normalizedEmail,
+      googleId,
+      authProvider: "google",
+      profileImage: profileImage || null,
+      isEmailVerified: isEmailVerified || true,
+      status: "active",
+      role: "user",
+    });
+
+    const jwtToken = generateToken(user);
+
+    return res.status(201).json({
+      success: true,
+      message: "Login successful",
+      token: jwtToken,
+      user: {
+        id: user._id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        phone: user.phone || null,
+        role: user.role,
+        status: user.status,
+        isEmailVerified: user.isEmailVerified,
+        profileImage: user.profileImage,
+        notificationPreferences: user.notificationPreferences || {
+          orderUpdates: true,
+          deliveryUpdates: true,
+          promotional: false,
+          emailNotifications: true,
+        },
+      },
+    });
+  } catch (error) {
+    console.error("Google Auth Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Server error during Google authentication.",
+    });
+  }
+};
+
+
