@@ -199,4 +199,4 @@ export const checkWishlist = async (req, res) => {
             message: "Server error while checking wishlist.",
         });
     }
-}; z
+};
