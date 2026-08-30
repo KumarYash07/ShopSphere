@@ -8,7 +8,7 @@ administrators.
 ## 🔗 Project Links
 
 -   **GitHub Repository:** https://github.com/KumarYash07/ShopSphere
--   **Live Demo:** To be added after Vercel deployment
+-   **Live Demo:** https://shop-sphere-ashy.vercel.app/
 
 ------------------------------------------------------------------------
 
