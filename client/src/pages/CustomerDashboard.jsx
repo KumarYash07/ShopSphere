@@ -4,7 +4,7 @@ import {
   FiGrid, FiPackage, FiHeart, FiMapPin, FiUser,
   FiSettings, FiLogOut, FiShoppingCart, FiPlus,
   FiTrash2, FiEdit, FiCheckCircle, FiX, FiAlertCircle,
-  FiEye, FiEyeOff
+  FiEye, FiEyeOff, FiXCircle
 } from 'react-icons/fi';
 import Navbar from '../components/navbar/Navbar';
 import Footer from '../components/footer/Footer';
@@ -12,6 +12,7 @@ import { useAuth } from '../context/AuthContext';
 import { useCart } from '../context/CartContext';
 import { useWishlist } from '../context/WishlistContext';
 import ProductCard from '../components/product/ProductCard';
+import CancelOrderModal from '../components/order/CancelOrderModal';
 import {
   getAddressesApi,
   addAddressApi,
@@ -19,7 +20,7 @@ import {
   deleteAddressApi,
   setDefaultAddressApi
 } from '../api/addressApi';
-import { getMyOrdersApi } from '../api/orderApi';
+import { getMyOrdersApi, isOrderCancellable } from '../api/orderApi';
 import {
   changePasswordApi,
   getNotificationPreferencesApi,
@@ -307,6 +308,20 @@ export default function CustomerDashboard() {
   // Order History State
   const [ordersList, setOrdersList] = useState([]);
   const [loadingOrdersList, setLoadingOrdersList] = useState(false);
+  const [selectedOrderToCancel, setSelectedOrderToCancel] = useState(null);
+  const [showCancelModal, setShowCancelModal] = useState(false);
+
+  const handleOpenCancelModal = (order) => {
+    setSelectedOrderToCancel(order);
+    setShowCancelModal(true);
+  };
+
+  const handleCancelSuccess = (updatedOrder) => {
+    setOrdersList((prev) =>
+      prev.map((o) => (o._id === updatedOrder._id ? { ...o, ...updatedOrder } : o))
+    );
+    showToast('success', 'Order cancelled successfully.');
+  };
 
   const [addressForm, setAddressForm] = useState({
     fullName: '',
@@ -699,31 +714,6 @@ export default function CustomerDashboard() {
                 </div>
               )}
 
-              {/* TAB: WISHLIST */}
-              {activeTab === 'wishlist' && (
-                <div className="card border-0 shadow-sm rounded-4 p-4 bg-white">
-                  <h4 className="fw-bold text-dark mb-4">My Wishlist ({wishlist.length})</h4>
-                  {wishlist.length === 0 ? (
-                    <div className="text-center py-5">
-                      <div className="display-4 text-muted mb-2">❤️</div>
-                      <h5 className="fw-bold text-dark">Your Wishlist is Empty</h5>
-                      <p className="text-muted small">Save items you love to view them later.</p>
-                      <Link to="/products" className="btn btn-primary rounded-pill btn-sm fw-bold" style={{ background: '#4F46E5' }}>
-                        Browse Catalog
-                      </Link>
-                    </div>
-                  ) : (
-                    <div className="row g-3">
-                      {wishlist.map((product) => (
-                        <div key={product._id || product.id} className="col-6 col-md-4">
-                          <ProductCard product={product} />
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-
               {/* TAB: CART */}
               {activeTab === 'cart' && (
                 <div className="card border-0 shadow-sm rounded-4 p-4 bg-white">
@@ -788,51 +778,83 @@ export default function CustomerDashboard() {
                     </div>
                   ) : (
                     <div className="d-flex flex-column gap-3">
-                      {ordersList.map((ord) => (
-                        <div key={ord._id} className="card border rounded-4 p-3 bg-white">
-                          <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 pb-2 mb-3 border-bottom">
-                            <div>
-                              <span className="fw-bold text-dark me-2">{ord.orderNumber}</span>
-                              <span className="small text-muted">
-                                ({ord.createdAt ? new Date(ord.createdAt).toLocaleDateString() : ''})
-                              </span>
-                            </div>
-                            <div className="d-flex align-items-center gap-2">
-                              <span className={`badge ${ord.orderStatus === 'confirmed' || ord.orderStatus === 'delivered' ? 'bg-success' : ord.orderStatus === 'cancelled' ? 'bg-danger' : 'bg-warning text-dark'} text-capitalize`}>
-                                {ord.orderStatus}
-                              </span>
-                              <span className="fw-bold text-primary">₹{ord.totalAmount?.toLocaleString()}</span>
-                            </div>
-                          </div>
+                      {ordersList.map((ord) => {
+                        const isCancellable = isOrderCancellable(ord.orderStatus);
 
-                          <div className="mb-2">
-                            {ord.items?.map((item, i) => (
-                              <div key={i} className="d-flex align-items-center justify-content-between py-1">
-                                <div className="d-flex align-items-center gap-2">
-                                  <img
-                                    src={item.productImage || item.product?.images?.[0] || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=80'}
-                                    alt=""
-                                    className="rounded-2"
-                                    style={{ width: 40, height: 40, objectFit: 'cover' }}
-                                  />
-                                  <span className="small fw-semibold">{item.productName} (x{item.quantity})</span>
-                                </div>
-                                <span className="small text-muted">₹{(item.price * item.quantity).toLocaleString()}</span>
+                        return (
+                          <div key={ord._id} className="card border rounded-4 p-3 bg-white">
+                            <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 pb-2 mb-3 border-bottom">
+                              <div>
+                                <span className="fw-bold text-dark me-2">{ord.orderNumber}</span>
+                                <span className="small text-muted">
+                                  ({ord.createdAt ? new Date(ord.createdAt).toLocaleDateString() : ''})
+                                </span>
                               </div>
-                            ))}
-                          </div>
-
-                          {ord.shippingAddress && (
-                            <div className="small text-muted pt-2 border-top">
-                              📍 <strong>Ship to:</strong> {ord.shippingAddress.fullName}, {ord.shippingAddress.city} - {ord.shippingAddress.pincode}
+                              <div className="d-flex align-items-center gap-2">
+                                <span className={`badge ${ord.orderStatus === 'confirmed' || ord.orderStatus === 'delivered' ? 'bg-success' : ord.orderStatus === 'cancelled' ? 'bg-danger' : 'bg-warning text-dark'} text-capitalize`}>
+                                  {ord.orderStatus}
+                                </span>
+                                <span className="fw-bold text-primary">₹{ord.totalAmount?.toLocaleString()}</span>
+                              </div>
                             </div>
-                          )}
-                        </div>
-                      ))}
+
+                            {/* Cancellation alert if cancelled */}
+                            {ord.orderStatus === 'cancelled' && (
+                              <div className="alert alert-danger py-2 px-3 mb-3 rounded-3 small d-flex align-items-start gap-2">
+                                <FiAlertCircle className="mt-1 flex-shrink-0 text-danger" size={16} />
+                                <div>
+                                  <div className="fw-bold">Order Cancelled</div>
+                                  <div>Reason: {ord.cancellationReason || 'Cancelled by customer'}</div>
+                                  {ord.cancelledAt && (
+                                    <div className="text-muted" style={{ fontSize: 11 }}>
+                                      Cancelled on: {new Date(ord.cancelledAt).toLocaleString()}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+
+                            <div className="mb-2">
+                              {ord.items?.map((item, i) => (
+                                <div key={i} className="d-flex align-items-center justify-content-between py-1">
+                                  <div className="d-flex align-items-center gap-2">
+                                    <img
+                                      src={item.productImage || item.product?.images?.[0] || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=80'}
+                                      alt=""
+                                      className="rounded-2"
+                                      style={{ width: 40, height: 40, objectFit: 'cover' }}
+                                    />
+                                    <span className="small fw-semibold">{item.productName} (x{item.quantity})</span>
+                                  </div>
+                                  <span className="small text-muted">₹{(item.price * item.quantity).toLocaleString()}</span>
+                                </div>
+                              ))}
+                            </div>
+
+                            <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 pt-2 border-top">
+                              {ord.shippingAddress ? (
+                                <div className="small text-muted">
+                                  📍 <strong>Ship to:</strong> {ord.shippingAddress.fullName}, {ord.shippingAddress.city} - {ord.shippingAddress.pincode}
+                                </div>
+                              ) : <div />}
+                              {isCancellable && (
+                                <button
+                                  type="button"
+                                  className="btn btn-outline-danger btn-sm rounded-pill px-3 fw-semibold d-inline-flex align-items-center gap-1 shadow-sm"
+                                  onClick={() => handleOpenCancelModal(ord)}
+                                >
+                                  <FiXCircle size={14} /> Cancel Order
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
                 </div>
               )}
+
 
               {/* TAB: WISHLIST */}
               {activeTab === 'wishlist' && (
@@ -1408,7 +1430,19 @@ export default function CustomerDashboard() {
         </div>
       )}
 
+      {/* Cancel Order Confirmation Modal */}
+      <CancelOrderModal
+        show={showCancelModal}
+        order={selectedOrderToCancel}
+        onClose={() => {
+          setShowCancelModal(false);
+          setSelectedOrderToCancel(null);
+        }}
+        onSuccess={handleCancelSuccess}
+      />
+
       <Footer />
     </>
   );
 }
+

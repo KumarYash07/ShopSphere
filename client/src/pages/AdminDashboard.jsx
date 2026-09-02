@@ -1831,8 +1831,16 @@ export default function AdminDashboard() {
 
                         <div className="col-12 mt-2">
                           {selectedAdminOrder.orderStatus === 'cancelled' ? (
-                            <div className="alert alert-warning py-2 mb-0 small">
-                              ⚠️ Cancelled orders cannot be updated.
+                            <div className="alert alert-danger py-2 mb-0 small">
+                              <strong>⚠️ Order Cancelled</strong>
+                              {selectedAdminOrder.cancellationReason && (
+                                <div className="mt-1">Reason: {selectedAdminOrder.cancellationReason}</div>
+                              )}
+                              {selectedAdminOrder.cancelledAt && (
+                                <div className="text-muted mt-1" style={{ fontSize: 11 }}>
+                                  Date: {new Date(selectedAdminOrder.cancelledAt).toLocaleString()}
+                                </div>
+                              )}
                             </div>
                           ) : (
                             <button

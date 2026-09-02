@@ -1143,8 +1143,16 @@ export default function SellerDashboard() {
                         </div>
                         <div className="col-md-6">
                           {selectedHostOrder.orderStatus === 'cancelled' ? (
-                            <div className="alert alert-warning py-2 mb-0 small">
-                              ⚠️ Cancelled orders cannot be updated.
+                            <div className="alert alert-danger py-2 mb-0 small">
+                              <strong>⚠️ Order Cancelled</strong>
+                              {selectedHostOrder.cancellationReason && (
+                                <div className="mt-1">Reason: {selectedHostOrder.cancellationReason}</div>
+                              )}
+                              {selectedHostOrder.cancelledAt && (
+                                <div className="text-muted mt-1" style={{ fontSize: 11 }}>
+                                  Date: {new Date(selectedHostOrder.cancelledAt).toLocaleString()}
+                                </div>
+                              )}
                             </div>
                           ) : (
                             <button

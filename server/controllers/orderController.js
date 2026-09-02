@@ -261,3 +261,62 @@ export const getOrderById = async (req, res) => {
         });
     }
 };
+
+
+// Cancel Order
+export const cancelOrder = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { reason } = req.body;
+
+        // Find order belonging to logged-in user
+        const order = await Order.findOne({
+            _id: id,
+            user: req.user._id,
+        });
+
+        if (!order) {
+            return res.status(404).json({
+                success: false,
+                message: "Order not found.",
+            });
+        }
+
+        // Customer can cancel until the order is delivered
+        const cancellableStatuses = [
+            "pending",
+            "confirmed",
+            "processing",
+            "shipped",
+        ];
+
+        if (!cancellableStatuses.includes(order.orderStatus)) {
+            return res.status(400).json({
+                success: false,
+                message: `Order cannot be cancelled because it is already ${order.orderStatus}.`,
+            });
+        }
+
+        // Update cancellation details
+        order.orderStatus = "cancelled";
+        order.cancelledAt = new Date();
+        order.cancellationReason =
+            reason?.trim() || "Cancelled by customer";
+
+        await order.save();
+
+        return res.status(200).json({
+            success: true,
+            message: "Order cancelled successfully.",
+            order,
+        });
+
+    } catch (error) {
+        console.error("Cancel Order Error:", error);
+
+        return res.status(500).json({
+            success: false,
+            message: "Server error while cancelling order.",
+        });
+    }
+};
