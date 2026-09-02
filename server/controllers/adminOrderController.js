@@ -143,33 +143,59 @@ export const updateOrderStatus = async (req, res) => {
             });
         }
 
+        // ==========================================
+        // Update Order Status
+        // ==========================================
+
         order.orderStatus = orderStatus;
 
+
+        // ==========================================
         // Delivered
+        // ==========================================
+
         if (orderStatus === "delivered") {
+
             order.deliveredAt = new Date();
+
+            // COD payment is collected on delivery
+            if (order.paymentMethod === "cod") {
+                order.paymentStatus = "paid";
+            }
         }
 
+
+        // ==========================================
         // Cancelled
+        // ==========================================
+
         if (orderStatus === "cancelled") {
+
             order.cancelledAt = new Date();
 
             if (cancellationReason) {
                 order.cancellationReason =
                     cancellationReason.trim();
+            } else {
+                order.cancellationReason =
+                    "Cancelled by admin";
             }
         }
 
+
         await order.save();
+
 
         return res.status(200).json({
             success: true,
             message: "Order status updated successfully.",
+
             order: {
                 id: order._id,
                 orderNumber: order.orderNumber,
                 orderStatus: order.orderStatus,
                 paymentStatus: order.paymentStatus,
+                paymentMethod: order.paymentMethod,
                 deliveredAt: order.deliveredAt,
                 cancelledAt: order.cancelledAt,
                 cancellationReason:
@@ -194,12 +220,23 @@ export const updateOrderStatus = async (req, res) => {
 
 export const getRevenueStats = async (req, res) => {
     try {
+
+        // ==========================================
+        // Revenue
+        // ==========================================
+        // Only PAID + NON-CANCELLED orders
+        // are counted in revenue.
+
         const revenueData = await Order.aggregate([
             {
                 $match: {
                     paymentStatus: "paid",
+                    orderStatus: {
+                        $ne: "cancelled",
+                    },
                 },
             },
+
             {
                 $group: {
                     _id: null,
@@ -215,6 +252,11 @@ export const getRevenueStats = async (req, res) => {
             },
         ]);
 
+
+        // ==========================================
+        // Order Statistics
+        // ==========================================
+
         const orderStats = await Order.aggregate([
             {
                 $group: {
@@ -225,6 +267,11 @@ export const getRevenueStats = async (req, res) => {
                 },
             },
         ]);
+
+
+        // ==========================================
+        // Payment Statistics
+        // ==========================================
 
         const paymentStats = await Order.aggregate([
             {
@@ -237,7 +284,14 @@ export const getRevenueStats = async (req, res) => {
             },
         ]);
 
-        const totalOrders = await Order.countDocuments();
+
+        // ==========================================
+        // Total Orders
+        // ==========================================
+
+        const totalOrders =
+            await Order.countDocuments();
+
 
         const revenue =
             revenueData.length > 0
@@ -247,11 +301,15 @@ export const getRevenueStats = async (req, res) => {
                     totalPaidOrders: 0,
                 };
 
+
         return res.status(200).json({
+
             success: true,
 
             revenue: {
-                totalRevenue: revenue.totalRevenue,
+                totalRevenue:
+                    revenue.totalRevenue,
+
                 totalPaidOrders:
                     revenue.totalPaidOrders,
             },
@@ -267,7 +325,11 @@ export const getRevenueStats = async (req, res) => {
         });
 
     } catch (error) {
-        console.error("Get Revenue Stats Error:", error);
+
+        console.error(
+            "Get Revenue Stats Error:",
+            error
+        );
 
         return res.status(500).json({
             success: false,

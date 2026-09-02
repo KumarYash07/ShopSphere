@@ -317,8 +317,9 @@ export default function CustomerDashboard() {
   };
 
   const handleCancelSuccess = (updatedOrder) => {
+    const targetId = updatedOrder._id || updatedOrder.id;
     setOrdersList((prev) =>
-      prev.map((o) => (o._id === updatedOrder._id ? { ...o, ...updatedOrder } : o))
+      prev.map((o) => (o._id === targetId || o.id === targetId ? { ...o, ...updatedOrder, _id: o._id } : o))
     );
     showToast('success', 'Order cancelled successfully.');
   };
@@ -793,6 +794,9 @@ export default function CustomerDashboard() {
                               <div className="d-flex align-items-center gap-2">
                                 <span className={`badge ${ord.orderStatus === 'confirmed' || ord.orderStatus === 'delivered' ? 'bg-success' : ord.orderStatus === 'cancelled' ? 'bg-danger' : 'bg-warning text-dark'} text-capitalize`}>
                                   {ord.orderStatus}
+                                </span>
+                                <span className={`badge ${ord.paymentStatus === 'paid' ? 'bg-success-subtle text-success' : ord.paymentStatus === 'refunded' ? 'bg-info-subtle text-info' : 'bg-secondary-subtle text-secondary'} text-capitalize`}>
+                                  {ord.paymentStatus}
                                 </span>
                                 <span className="fw-bold text-primary">₹{ord.totalAmount?.toLocaleString()}</span>
                               </div>

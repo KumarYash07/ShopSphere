@@ -282,7 +282,7 @@ export const cancelOrder = async (req, res) => {
             });
         }
 
-        // Customer can cancel until the order is delivered
+        // Customer can cancel until shipped
         const cancellableStatuses = [
             "pending",
             "confirmed",
@@ -293,22 +293,53 @@ export const cancelOrder = async (req, res) => {
         if (!cancellableStatuses.includes(order.orderStatus)) {
             return res.status(400).json({
                 success: false,
-                message: `Order cannot be cancelled because it is already ${order.orderStatus}.`,
+                message:
+                    `Order cannot be cancelled because it is already ${order.orderStatus}.`,
             });
         }
 
-        // Update cancellation details
+        // ==========================================
+        // Cancel Order
+        // ==========================================
+
         order.orderStatus = "cancelled";
         order.cancelledAt = new Date();
+
         order.cancellationReason =
             reason?.trim() || "Cancelled by customer";
+
+        // ==========================================
+        // Payment Handling
+        // ==========================================
+
+        // COD:
+        // Payment has not been collected yet,
+        // so keep paymentStatus as pending.
+
+        // DEMO / ONLINE:
+        // If payment was already made, mark it refunded.
+        if (
+            order.paymentStatus === "paid" &&
+            order.paymentMethod !== "cod"
+        ) {
+            order.paymentStatus = "refunded";
+        }
 
         await order.save();
 
         return res.status(200).json({
             success: true,
             message: "Order cancelled successfully.",
-            order,
+
+            order: {
+                id: order._id,
+                orderNumber: order.orderNumber,
+                orderStatus: order.orderStatus,
+                paymentMethod: order.paymentMethod,
+                paymentStatus: order.paymentStatus,
+                cancelledAt: order.cancelledAt,
+                cancellationReason: order.cancellationReason,
+            },
         });
 
     } catch (error) {

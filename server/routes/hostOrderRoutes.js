@@ -4,6 +4,7 @@ import {
     getHostOrders,
     getHostOrderById,
     updateHostOrderStatus,
+    getHostRevenueStats,
 } from "../controllers/hostOrderController.js";
 
 import { protect } from "../middleware/authMiddleware.js";
@@ -19,6 +20,13 @@ router.use(
 router.get(
     "/",
     getHostOrders
+);
+
+router.get(
+    "/revenue",
+    protect,
+    authorize("host"),
+    getHostRevenueStats
 );
 
 router.get(

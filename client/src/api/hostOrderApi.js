@@ -29,3 +29,12 @@ export const updateHostOrderStatusApi = async (id, orderStatus) => {
   const response = await api.put(`/host/orders/${id}/status`, { orderStatus });
   return response.data;
 };
+
+/**
+ * Fetch revenue statistics and order breakdown for the logged-in host's store
+ * @returns {Promise<{success: boolean, revenue: {totalRevenue: number, totalPaidOrders: number}, orders: {total: number, byStatus: Array}, payments: {byStatus: Array}}>}
+ */
+export const getHostRevenueStatsApi = async () => {
+  const response = await api.get('/host/orders/revenue');
+  return response.data;
+};

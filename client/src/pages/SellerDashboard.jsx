@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import {
   FiGrid, FiPackage, FiPlusCircle, FiShoppingBag, FiSettings,
-  FiEdit, FiTrash2, FiUpload, FiX, FiCheck, FiAlertCircle, FiRefreshCw, FiEye
+  FiEdit, FiTrash2, FiUpload, FiX, FiCheck, FiAlertCircle, FiRefreshCw, FiEye,
+  FiDollarSign, FiCheckCircle, FiTrendingUp
 } from 'react-icons/fi';
 import Navbar from '../components/navbar/Navbar';
 import Footer from '../components/footer/Footer';
@@ -12,7 +13,7 @@ import {
   getProductsApi, getMyProductsApi, createProductApi, updateProductApi, deleteProductApi,
   updateProductStockApi, updateProductDiscountApi, uploadProductImagesApi
 } from '../api/productApi';
-import { getHostOrdersApi, getHostOrderByIdApi, updateHostOrderStatusApi } from '../api/hostOrderApi';
+import { getHostOrdersApi, getHostOrderByIdApi, updateHostOrderStatusApi, getHostRevenueStatsApi } from '../api/hostOrderApi';
 import { getCategoriesApi } from '../api/categoryApi';
 import { formatPrice } from '../utils/helpers';
 
@@ -126,6 +127,10 @@ export default function SellerDashboard() {
   const [updatingHostOrderStatusId, setUpdatingHostOrderStatusId] = useState(null);
   const [newHostOrderStatus, setNewHostOrderStatus] = useState('');
 
+  // Host Revenue state
+  const [hostRevenueStats, setHostRevenueStats] = useState(null);
+  const [loadingHostRevenue, setLoadingHostRevenue] = useState(true);
+
   // Load Host Products via /api/products/my-products
   const fetchMyProducts = async () => {
     setLoadingProducts(true);
@@ -141,18 +146,40 @@ export default function SellerDashboard() {
     }
   };
 
+  // Load Host Revenue Statistics via /api/host/orders/revenue
+  const fetchHostRevenueStats = async () => {
+    setLoadingHostRevenue(true);
+    try {
+      const data = await getHostRevenueStatsApi();
+      if (data.success) {
+        setHostRevenueStats(data);
+      }
+    } catch (err) {
+      console.error('Failed to load host revenue stats:', err);
+    } finally {
+      setLoadingHostRevenue(false);
+    }
+  };
+
   // Load Host Store Orders via /api/host/orders
   const fetchHostOrders = async () => {
     setLoadingHostOrders(true);
     try {
-      const data = await getHostOrdersApi();
-      if (data.success && Array.isArray(data.orders)) {
-        setHostOrders(data.orders);
+      const [ordersData, revData] = await Promise.all([
+        getHostOrdersApi(),
+        getHostRevenueStatsApi().catch(() => ({ success: false })),
+      ]);
+      if (ordersData.success && Array.isArray(ordersData.orders)) {
+        setHostOrders(ordersData.orders);
+      }
+      if (revData && revData.success) {
+        setHostRevenueStats(revData);
       }
     } catch (err) {
       console.error('Failed to load host store orders:', err);
     } finally {
       setLoadingHostOrders(false);
+      setLoadingHostRevenue(false);
     }
   };
 
@@ -182,11 +209,14 @@ export default function SellerDashboard() {
       if (data.success) {
         showToast('success', data.message || `Order status updated to ${targetStatus}.`);
         fetchHostOrders();
-        if (selectedHostOrder && selectedHostOrder._id === orderId) {
+        fetchHostRevenueStats();
+        if (selectedHostOrder && (selectedHostOrder._id === orderId || selectedHostOrder.id === orderId)) {
           setSelectedHostOrder(prev => prev ? {
             ...prev,
+            ...(data.order || {}),
             orderStatus: targetStatus,
-            deliveredAt: targetStatus === 'delivered' ? new Date() : prev.deliveredAt,
+            deliveredAt: data.order?.deliveredAt || (targetStatus === 'delivered' ? new Date() : prev.deliveredAt),
+            paymentStatus: data.order?.paymentStatus || (targetStatus === 'delivered' && prev.paymentMethod === 'cod' ? 'paid' : prev.paymentStatus),
           } : null);
         }
       }
@@ -214,6 +244,7 @@ export default function SellerDashboard() {
     fetchMyProducts();
     fetchCategories();
     fetchHostOrders();
+    fetchHostRevenueStats();
   }, []);
 
   const showToast = (type, message) => {
@@ -417,6 +448,7 @@ export default function SellerDashboard() {
               { id: 'products', label: 'Products List', icon: FiPackage },
               { id: 'add-product', label: editingProduct ? 'Edit Product' : 'Add Product', icon: FiPlusCircle },
               { id: 'orders', label: 'Store Orders', icon: FiShoppingBag },
+              { id: 'revenue', label: 'Revenue Analytics', icon: FiDollarSign },
             ].map(tab => {
               const Icon = tab.icon;
               return (
@@ -437,31 +469,62 @@ export default function SellerDashboard() {
           {activeTab === 'overview' && (
             <div>
               <div className="row g-3 mb-4">
-                <div className="col-6 col-md-3">
-                  <div className="card border-0 shadow-sm rounded-4 p-3 bg-white">
+                <div className="col-6 col-md-4 col-xl-2">
+                  <div className="card border-0 shadow-sm rounded-4 p-3 bg-white h-100">
+                    <div className="text-muted small fw-semibold">Store Revenue</div>
+                    <div className="fs-4 fw-bold text-success my-1">
+                      {loadingHostRevenue ? (
+                        <div className="spinner-border spinner-border-sm text-success" role="status" />
+                      ) : (
+                        formatPrice(hostRevenueStats?.revenue?.totalRevenue || 0)
+                      )}
+                    </div>
+                    <div className="small text-muted">From paid orders</div>
+                  </div>
+                </div>
+
+                <div className="col-6 col-md-4 col-xl-2">
+                  <div className="card border-0 shadow-sm rounded-4 p-3 bg-white h-100">
+                    <div className="text-muted small fw-semibold">Paid Orders</div>
+                    <div className="fs-4 fw-bold text-primary my-1">
+                      {loadingHostRevenue ? (
+                        <div className="spinner-border spinner-border-sm text-primary" role="status" />
+                      ) : (
+                        hostRevenueStats?.revenue?.totalPaidOrders ?? 0
+                      )}
+                    </div>
+                    <div className="small text-muted">Completed sales</div>
+                  </div>
+                </div>
+
+                <div className="col-6 col-md-4 col-xl-2">
+                  <div className="card border-0 shadow-sm rounded-4 p-3 bg-white h-100">
                     <div className="text-muted small fw-semibold">Total Products</div>
-                    <div className="display-6 fw-bold text-dark my-1">{products.length}</div>
+                    <div className="fs-4 fw-bold text-dark my-1">{products.length}</div>
                     <div className="small text-muted">In inventory</div>
                   </div>
                 </div>
-                <div className="col-6 col-md-3">
-                  <div className="card border-0 shadow-sm rounded-4 p-3 bg-white">
+
+                <div className="col-6 col-md-4 col-xl-2">
+                  <div className="card border-0 shadow-sm rounded-4 p-3 bg-white h-100">
                     <div className="text-muted small fw-semibold">Active Products</div>
-                    <div className="display-6 fw-bold text-success my-1">{activeCount}</div>
+                    <div className="fs-4 fw-bold text-info my-1">{activeCount}</div>
                     <div className="small text-muted">Ready to sell</div>
                   </div>
                 </div>
-                <div className="col-6 col-md-3">
-                  <div className="card border-0 shadow-sm rounded-4 p-3 bg-white">
+
+                <div className="col-6 col-md-4 col-xl-2">
+                  <div className="card border-0 shadow-sm rounded-4 p-3 bg-white h-100">
                     <div className="text-muted small fw-semibold">Out of Stock</div>
-                    <div className="display-6 fw-bold text-danger my-1">{outOfStockCount}</div>
-                    <div className="small text-muted">Needs replenishment</div>
+                    <div className="fs-4 fw-bold text-danger my-1">{outOfStockCount}</div>
+                    <div className="small text-muted">Needs restock</div>
                   </div>
                 </div>
-                <div className="col-6 col-md-3">
-                  <div className="card border-0 shadow-sm rounded-4 p-3 bg-white">
+
+                <div className="col-6 col-md-4 col-xl-2">
+                  <div className="card border-0 shadow-sm rounded-4 p-3 bg-white h-100">
                     <div className="text-muted small fw-semibold">Store Rating</div>
-                    <div className="display-6 fw-bold text-warning my-1">
+                    <div className="fs-4 fw-bold text-warning my-1">
                       ⭐ {store?.rating || '4.8'}
                     </div>
                     <div className="small text-muted">Customer rating</div>
@@ -478,6 +541,12 @@ export default function SellerDashboard() {
                   </button>
                   <button className="btn btn-outline-primary rounded-3 fw-semibold" onClick={() => setActiveTab('products')}>
                     View Inventory List
+                  </button>
+                  <button className="btn btn-outline-primary rounded-3 fw-semibold" onClick={() => setActiveTab('orders')}>
+                    View Store Orders
+                  </button>
+                  <button className="btn btn-outline-success rounded-3 fw-semibold" onClick={() => setActiveTab('revenue')}>
+                    View Revenue Analytics
                   </button>
                   <button className="btn btn-primary rounded-3 fw-semibold" style={{ background: '#4F46E5' }} onClick={() => setActiveTab('add-product')}>
                     Add Product
@@ -1005,6 +1074,79 @@ export default function SellerDashboard() {
           {/* TAB 5: HOST STORE ORDERS */}
           {activeTab === 'orders' && (
             <div>
+              {/* Host Revenue KPI Summary Cards */}
+              <div className="row g-3 mb-4">
+                <div className="col-6 col-md-3">
+                  <div className="card border-0 shadow-sm rounded-4 p-3 bg-white h-100 border-start border-success border-4">
+                    <div className="d-flex align-items-center justify-content-between text-muted small fw-semibold mb-1">
+                      <span>Store Revenue</span>
+                      <FiDollarSign className="text-success fs-5" />
+                    </div>
+                    <div className="fs-3 fw-bold text-success my-1">
+                      {loadingHostRevenue ? (
+                        <div className="spinner-border spinner-border-sm text-success" role="status" />
+                      ) : (
+                        formatPrice(hostRevenueStats?.revenue?.totalRevenue || 0)
+                      )}
+                    </div>
+                    <div className="small text-muted">From paid orders</div>
+                  </div>
+                </div>
+
+                <div className="col-6 col-md-3">
+                  <div className="card border-0 shadow-sm rounded-4 p-3 bg-white h-100 border-start border-primary border-4">
+                    <div className="d-flex align-items-center justify-content-between text-muted small fw-semibold mb-1">
+                      <span>Paid Orders</span>
+                      <FiCheckCircle className="text-primary fs-5" />
+                    </div>
+                    <div className="fs-3 fw-bold text-primary my-1">
+                      {loadingHostRevenue ? (
+                        <div className="spinner-border spinner-border-sm text-primary" role="status" />
+                      ) : (
+                        hostRevenueStats?.revenue?.totalPaidOrders ?? 0
+                      )}
+                    </div>
+                    <div className="small text-muted">Successful sales</div>
+                  </div>
+                </div>
+
+                <div className="col-6 col-md-3">
+                  <div className="card border-0 shadow-sm rounded-4 p-3 bg-white h-100 border-start border-info border-4">
+                    <div className="d-flex align-items-center justify-content-between text-muted small fw-semibold mb-1">
+                      <span>Total Orders</span>
+                      <FiPackage className="text-info fs-5" />
+                    </div>
+                    <div className="fs-3 fw-bold text-info my-1">
+                      {loadingHostRevenue ? (
+                        <div className="spinner-border spinner-border-sm text-info" role="status" />
+                      ) : (
+                        hostRevenueStats?.orders?.total ?? hostOrders.length
+                      )}
+                    </div>
+                    <div className="small text-muted">Store order volume</div>
+                  </div>
+                </div>
+
+                <div className="col-6 col-md-3">
+                  <div className="card border-0 shadow-sm rounded-4 p-3 bg-white h-100 border-start border-warning border-4">
+                    <div className="d-flex align-items-center justify-content-between text-muted small fw-semibold mb-1">
+                      <span>Avg Order Value</span>
+                      <FiTrendingUp className="text-warning fs-5" />
+                    </div>
+                    <div className="fs-3 fw-bold text-dark my-1">
+                      {loadingHostRevenue ? (
+                        <div className="spinner-border spinner-border-sm text-warning" role="status" />
+                      ) : (
+                        (hostRevenueStats?.revenue?.totalPaidOrders > 0)
+                          ? formatPrice(hostRevenueStats.revenue.totalRevenue / hostRevenueStats.revenue.totalPaidOrders)
+                          : '₹0'
+                      )}
+                    </div>
+                    <div className="small text-muted">Per paid order</div>
+                  </div>
+                </div>
+              </div>
+
               <div className="card border-0 shadow-sm rounded-4 p-4 bg-white mb-4">
                 <div className="d-flex flex-column flex-md-row align-items-md-center justify-content-between mb-3 gap-2">
                   <div>
@@ -1012,7 +1154,7 @@ export default function SellerDashboard() {
                     <p className="small text-muted mb-0">Track and fulfill incoming orders containing products from your store.</p>
                   </div>
                   <button className="btn btn-outline-primary btn-sm rounded-pill px-3 d-flex align-items-center gap-1" onClick={fetchHostOrders}>
-                    <FiRefreshCw size={14} /> Refresh Orders
+                    <FiRefreshCw size={14} /> Refresh Orders & Revenue
                   </button>
                 </div>
 
@@ -1111,6 +1253,154 @@ export default function SellerDashboard() {
             </div>
           )}
 
+          {/* TAB 6: HOST REVENUE ANALYTICS */}
+          {activeTab === 'revenue' && (
+            <div>
+              <div className="card border-0 shadow-sm rounded-4 p-4 bg-white mb-4">
+                <div className="d-flex flex-column flex-md-row align-items-md-center justify-content-between mb-4 gap-2">
+                  <div>
+                    <h4 className="fw-bold text-dark mb-1">Host Revenue & Performance Analytics</h4>
+                    <p className="text-muted small mb-0">
+                      Real-time revenue metrics aggregated for your store. Only paid, non-cancelled orders are calculated in total earnings.
+                    </p>
+                  </div>
+                  <button
+                    className="btn btn-outline-primary btn-sm rounded-pill px-3 d-flex align-items-center gap-1"
+                    onClick={fetchHostRevenueStats}
+                  >
+                    <FiRefreshCw size={14} /> Refresh Analytics
+                  </button>
+                </div>
+
+                {/* Primary Stats Grid */}
+                <div className="row g-3 mb-4">
+                  <div className="col-12 col-md-6 col-xl-3">
+                    <div className="p-4 rounded-4 bg-success-subtle border border-success-subtle h-100">
+                      <div className="d-flex align-items-center justify-content-between text-success mb-2">
+                        <span className="small fw-bold text-uppercase">Net Store Revenue</span>
+                        <FiDollarSign size={24} />
+                      </div>
+                      <div className="display-6 fw-bold text-success mb-1">
+                        {loadingHostRevenue ? (
+                          <div className="spinner-border text-success" role="status" />
+                        ) : (
+                          formatPrice(hostRevenueStats?.revenue?.totalRevenue || 0)
+                        )}
+                      </div>
+                      <div className="small text-muted">Paid & fulfilled customer orders</div>
+                    </div>
+                  </div>
+
+                  <div className="col-12 col-md-6 col-xl-3">
+                    <div className="p-4 rounded-4 bg-primary-subtle border border-primary-subtle h-100">
+                      <div className="d-flex align-items-center justify-content-between text-primary mb-2">
+                        <span className="small fw-bold text-uppercase">Paid Orders</span>
+                        <FiCheckCircle size={24} />
+                      </div>
+                      <div className="display-6 fw-bold text-primary mb-1">
+                        {loadingHostRevenue ? (
+                          <div className="spinner-border text-primary" role="status" />
+                        ) : (
+                          hostRevenueStats?.revenue?.totalPaidOrders ?? 0
+                        )}
+                      </div>
+                      <div className="small text-muted">Cleared payments across store</div>
+                    </div>
+                  </div>
+
+                  <div className="col-12 col-md-6 col-xl-3">
+                    <div className="p-4 rounded-4 bg-info-subtle border border-info-subtle h-100">
+                      <div className="d-flex align-items-center justify-content-between text-info mb-2">
+                        <span className="small fw-bold text-uppercase">Total Orders</span>
+                        <FiPackage size={24} />
+                      </div>
+                      <div className="display-6 fw-bold text-info mb-1">
+                        {loadingHostRevenue ? (
+                          <div className="spinner-border text-info" role="status" />
+                        ) : (
+                          hostRevenueStats?.orders?.total ?? hostOrders.length
+                        )}
+                      </div>
+                      <div className="small text-muted">All-time store order volume</div>
+                    </div>
+                  </div>
+
+                  <div className="col-12 col-md-6 col-xl-3">
+                    <div className="p-4 rounded-4 bg-warning-subtle border border-warning-subtle h-100">
+                      <div className="d-flex align-items-center justify-content-between text-warning mb-2">
+                        <span className="small fw-bold text-uppercase">Average Paid Order</span>
+                        <FiTrendingUp size={24} />
+                      </div>
+                      <div className="display-6 fw-bold text-dark mb-1">
+                        {loadingHostRevenue ? (
+                          <div className="spinner-border text-warning" role="status" />
+                        ) : (
+                          (hostRevenueStats?.revenue?.totalPaidOrders > 0)
+                            ? formatPrice(hostRevenueStats.revenue.totalRevenue / hostRevenueStats.revenue.totalPaidOrders)
+                            : '₹0'
+                        )}
+                      </div>
+                      <div className="small text-muted">Average revenue per sale</div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Status Breakdowns */}
+                <div className="row g-4">
+                  <div className="col-md-6">
+                    <div className="border rounded-4 p-4 h-100">
+                      <h6 className="fw-bold text-dark mb-3">Orders Breakdown by Status</h6>
+                      {hostRevenueStats?.orders?.byStatus?.length > 0 ? (
+                        <div className="d-flex flex-column gap-2">
+                          {hostRevenueStats.orders.byStatus.map((item) => (
+                            <div key={item._id} className="d-flex align-items-center justify-content-between p-2 rounded-3 bg-light">
+                              <span className="badge bg-secondary text-capitalize px-3 py-2">
+                                {item._id}
+                              </span>
+                              <span className="fw-bold text-dark">{item.count} order{item.count !== 1 ? 's' : ''}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-muted small mb-0">No order status data available yet.</p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="col-md-6">
+                    <div className="border rounded-4 p-4 h-100">
+                      <h6 className="fw-bold text-dark mb-3">Payment Collection Breakdown</h6>
+                      {hostRevenueStats?.payments?.byStatus?.length > 0 ? (
+                        <div className="d-flex flex-column gap-2">
+                          {hostRevenueStats.payments.byStatus.map((item) => (
+                            <div key={item._id} className="d-flex align-items-center justify-content-between p-2 rounded-3 bg-light">
+                              <span className={`badge ${item._id === 'paid' ? 'bg-success' : item._id === 'refunded' ? 'bg-info text-dark' : 'bg-warning text-dark'} text-capitalize px-3 py-2`}>
+                                {item._id}
+                              </span>
+                              <span className="fw-bold text-dark">{item.count} transaction{item.count !== 1 ? 's' : ''}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-muted small mb-0">No payment data available yet.</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-4 pt-3 border-top d-flex justify-content-end">
+                  <button
+                    className="btn btn-primary rounded-pill px-4 fw-semibold"
+                    style={{ background: '#4F46E5' }}
+                    onClick={() => setActiveTab('orders')}
+                  >
+                    View & Manage Store Orders →
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* HOST ORDER DETAILS & STATUS UPDATE MODAL */}
           {selectedHostOrder && (
             <div className="modal fade show d-block" tabIndex="-1" style={{ backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1060 }}>
@@ -1190,7 +1480,7 @@ export default function SellerDashboard() {
                           </div>
                           <div className="small d-flex justify-content-between mb-1">
                             <span className="text-muted">Payment Status:</span>
-                            <span className={`badge ${selectedHostOrder.paymentStatus === 'paid' ? 'bg-success' : 'bg-secondary'}`}>{selectedHostOrder.paymentStatus}</span>
+                            <span className={`badge ${selectedHostOrder.paymentStatus === 'paid' ? 'bg-success' : selectedHostOrder.paymentStatus === 'refunded' ? 'bg-info text-dark' : 'bg-secondary'} text-capitalize`}>{selectedHostOrder.paymentStatus}</span>
                           </div>
                           <div className="small d-flex justify-content-between">
                             <span className="text-muted">Total Order Amount:</span>

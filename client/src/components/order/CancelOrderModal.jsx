@@ -47,10 +47,21 @@ export default function CancelOrderModal({ show, order, onClose, onSuccess }) {
 
     setSubmitting(true);
     try {
-      const res = await cancelOrderApi(order._id, finalReason);
+      const targetId = order._id || order.id;
+      const res = await cancelOrderApi(targetId, finalReason);
       if (res.success) {
         if (onSuccess) {
-          onSuccess(res.order || { ...order, orderStatus: 'cancelled', cancellationReason: finalReason, cancelledAt: new Date() });
+          const updated = {
+            ...order,
+            ...(res.order || {}),
+            _id: targetId,
+            id: targetId,
+            orderStatus: res.order?.orderStatus || 'cancelled',
+            paymentStatus: res.order?.paymentStatus || (order.paymentMethod !== 'cod' && order.paymentStatus === 'paid' ? 'refunded' : order.paymentStatus),
+            cancelledAt: res.order?.cancelledAt || new Date(),
+            cancellationReason: res.order?.cancellationReason || finalReason,
+          };
+          onSuccess(updated);
         }
         onClose();
       } else {

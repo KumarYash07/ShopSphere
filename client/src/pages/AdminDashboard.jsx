@@ -357,13 +357,15 @@ export default function AdminDashboard() {
       if (data.success) {
         showToast('success', data.message || `Order status updated to ${targetStatus}.`);
         fetchAdminOrdersData();
-        if (selectedAdminOrder && selectedAdminOrder._id === orderId) {
+        if (selectedAdminOrder && (selectedAdminOrder._id === orderId || selectedAdminOrder.id === orderId)) {
           setSelectedAdminOrder(prev => prev ? {
             ...prev,
+            ...(data.order || {}),
             orderStatus: targetStatus,
-            cancellationReason: reason,
-            deliveredAt: targetStatus === 'delivered' ? new Date() : prev.deliveredAt,
-            cancelledAt: targetStatus === 'cancelled' ? new Date() : prev.cancelledAt,
+            cancellationReason: data.order?.cancellationReason || reason || prev.cancellationReason,
+            deliveredAt: data.order?.deliveredAt || (targetStatus === 'delivered' ? new Date() : prev.deliveredAt),
+            cancelledAt: data.order?.cancelledAt || (targetStatus === 'cancelled' ? new Date() : prev.cancelledAt),
+            paymentStatus: data.order?.paymentStatus || (targetStatus === 'delivered' && prev.paymentMethod === 'cod' ? 'paid' : prev.paymentStatus),
           } : null);
         }
       }
@@ -1749,7 +1751,7 @@ export default function AdminDashboard() {
                                 <td>
                                   <div className="d-flex flex-column">
                                     <span className="small fw-semibold text-uppercase">{order.paymentMethod}</span>
-                                    <span className={`badge rounded-pill ${order.paymentStatus === 'paid' ? 'bg-success-subtle text-success' : order.paymentStatus === 'failed' ? 'bg-danger-subtle text-danger' : 'bg-secondary-subtle text-dark'}`} style={{ width: 'fit-content', fontSize: 10 }}>
+                                    <span className={`badge rounded-pill ${order.paymentStatus === 'paid' ? 'bg-success-subtle text-success' : order.paymentStatus === 'refunded' ? 'bg-info-subtle text-info' : order.paymentStatus === 'failed' ? 'bg-danger-subtle text-danger' : 'bg-secondary-subtle text-dark'}`} style={{ width: 'fit-content', fontSize: 10 }}>
                                       {order.paymentStatus}
                                     </span>
                                   </div>
@@ -1878,7 +1880,7 @@ export default function AdminDashboard() {
                           </div>
                           <div className="small d-flex justify-content-between mb-1">
                             <span className="text-muted">Payment Status:</span>
-                            <span className={`badge ${selectedAdminOrder.paymentStatus === 'paid' ? 'bg-success' : 'bg-secondary'}`}>{selectedAdminOrder.paymentStatus}</span>
+                            <span className={`badge ${selectedAdminOrder.paymentStatus === 'paid' ? 'bg-success' : selectedAdminOrder.paymentStatus === 'refunded' ? 'bg-info text-dark' : 'bg-secondary'} text-capitalize`}>{selectedAdminOrder.paymentStatus}</span>
                           </div>
                           <div className="small d-flex justify-content-between">
                             <span className="text-muted">Total Amount:</span>

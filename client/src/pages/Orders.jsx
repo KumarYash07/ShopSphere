@@ -36,8 +36,9 @@ export default function Orders() {
   };
 
   const handleCancelSuccess = (updatedOrder) => {
+    const targetId = updatedOrder._id || updatedOrder.id;
     setOrders((prev) =>
-      prev.map((o) => (o._id === updatedOrder._id ? { ...o, ...updatedOrder } : o))
+      prev.map((o) => (o._id === targetId || o.id === targetId ? { ...o, ...updatedOrder, _id: o._id } : o))
     );
     showToast('success', 'Order cancelled successfully.');
   };
@@ -144,7 +145,7 @@ export default function Orders() {
                       <span className={`badge ${order.orderStatus === 'confirmed' || order.orderStatus === 'delivered' ? 'bg-success' : order.orderStatus === 'cancelled' ? 'bg-danger' : 'bg-warning text-dark'} px-2 py-1 text-capitalize`} style={{ fontSize: 12 }}>
                         {STATUS_ICONS[order.orderStatus] || '📦'} {order.orderStatus}
                       </span>
-                      <span className={`badge ${order.paymentStatus === 'paid' ? 'bg-success-subtle text-success' : 'bg-secondary-subtle text-dark'} px-2 py-1 text-uppercase`} style={{ fontSize: 10 }}>
+                      <span className={`badge ${order.paymentStatus === 'paid' ? 'bg-success-subtle text-success' : order.paymentStatus === 'refunded' ? 'bg-info-subtle text-info' : 'bg-secondary-subtle text-dark'} px-2 py-1 text-uppercase`} style={{ fontSize: 10 }}>
                         Payment: {order.paymentStatus}
                       </span>
                     </div>
