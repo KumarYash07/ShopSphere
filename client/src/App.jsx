@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { CartProvider } from './context/CartContext';
 import { WishlistProvider } from './context/WishlistContext';
+import ErrorBoundary from './components/common/ErrorBoundary';
 
 // Route Guards
 import ProtectedRoute from './components/common/ProtectedRoute';
@@ -33,105 +34,107 @@ import AdminDashboard from './pages/AdminDashboard';
 export default function App() {
   return (
     <BrowserRouter>
-      <AuthProvider>
-        <CartProvider>
-          <WishlistProvider>
-            <Routes>
-              {/* Public Routes */}
-              <Route path="/" element={<Home />} />
-              <Route path="/login" element={<LoginPage />} />
-              <Route path="/register" element={<RegisterPage />} />
-              <Route path="/verify-email" element={<VerifyEmailPage />} />
-              <Route path="/products" element={<Products />} />
-              <Route path="/products/:id" element={<ProductDetail />} />
-              <Route path="/search" element={<Products />} />
-              <Route path="/categories" element={<Categories />} />
-              <Route path="/offers" element={<Offers />} />
+      <ErrorBoundary>
+        <AuthProvider>
+          <CartProvider>
+            <WishlistProvider>
+              <Routes>
+                {/* Public Routes */}
+                <Route path="/" element={<Home />} />
+                <Route path="/login" element={<LoginPage />} />
+                <Route path="/register" element={<RegisterPage />} />
+                <Route path="/verify-email" element={<VerifyEmailPage />} />
+                <Route path="/products" element={<Products />} />
+                <Route path="/products/:id" element={<ProductDetail />} />
+                <Route path="/search" element={<Products />} />
+                <Route path="/categories" element={<Categories />} />
+                <Route path="/offers" element={<Offers />} />
 
-              {/* User Protected Routes */}
-              <Route
-                path="/cart"
-                element={
-                  <ProtectedRoute>
-                    <Cart />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/wishlist"
-                element={
-                  <ProtectedRoute>
-                    <Wishlist />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/checkout"
-                element={
-                  <ProtectedRoute>
-                    <Checkout />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/orders"
-                element={
-                  <ProtectedRoute>
-                    <Orders />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/dashboard"
-                element={
-                  <ProtectedRoute>
-                    <CustomerDashboard />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/settings"
-                element={
-                  <ProtectedRoute>
-                    <CustomerDashboard />
-                  </ProtectedRoute>
-                }
-              />
+                {/* User Protected Routes */}
+                <Route
+                  path="/cart"
+                  element={
+                    <ProtectedRoute>
+                      <Cart />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/wishlist"
+                  element={
+                    <ProtectedRoute>
+                      <Wishlist />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/checkout"
+                  element={
+                    <ProtectedRoute>
+                      <Checkout />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/orders"
+                  element={
+                    <ProtectedRoute>
+                      <Orders />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/dashboard"
+                  element={
+                    <ProtectedRoute>
+                      <CustomerDashboard />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/settings"
+                  element={
+                    <ProtectedRoute>
+                      <CustomerDashboard />
+                    </ProtectedRoute>
+                  }
+                />
 
-              {/* Host / Seller Protected Routes */}
-              <Route
-                path="/seller/*"
-                element={
-                  <HostRoute>
-                    <SellerDashboard />
-                  </HostRoute>
-                }
-              />
-              <Route
-                path="/host-dashboard/*"
-                element={
-                  <HostRoute>
-                    <SellerDashboard />
-                  </HostRoute>
-                }
-              />
+                {/* Host / Seller Protected Routes */}
+                <Route
+                  path="/seller/*"
+                  element={
+                    <HostRoute>
+                      <SellerDashboard />
+                    </HostRoute>
+                  }
+                />
+                <Route
+                  path="/host-dashboard/*"
+                  element={
+                    <HostRoute>
+                      <SellerDashboard />
+                    </HostRoute>
+                  }
+                />
 
-              {/* Admin Protected Routes */}
-              <Route
-                path="/admin/*"
-                element={
-                  <AdminRoute>
-                    <AdminDashboard />
-                  </AdminRoute>
-                }
-              />
+                {/* Admin Protected Routes */}
+                <Route
+                  path="/admin/*"
+                  element={
+                    <AdminRoute>
+                      <AdminDashboard />
+                    </AdminRoute>
+                  }
+                />
 
-              {/* 404 Not Found */}
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-          </WishlistProvider>
-        </CartProvider>
-      </AuthProvider>
+                {/* 404 Not Found */}
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </WishlistProvider>
+          </CartProvider>
+        </AuthProvider>
+      </ErrorBoundary>
     </BrowserRouter>
   );
 }

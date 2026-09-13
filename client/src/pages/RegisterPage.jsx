@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
-  FiUser, FiMail, FiLock, FiPhone, FiArrowLeft, FiAlertCircle, FiShield
+  FiUser, FiMail, FiLock, FiPhone, FiArrowLeft, FiAlertCircle, FiShield, FiEye, FiEyeOff
 } from 'react-icons/fi';
 import { FcGoogle } from 'react-icons/fc';
 import { useAuth } from '../context/AuthContext';
@@ -11,8 +11,11 @@ import { triggerGoogleAuth } from '../utils/googleAuth';
 export default function RegisterPage() {
   const { register, googleLogin } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
-  const [role, setRole] = useState('user'); // 'user' or 'host'
+  const initialRole = searchParams.get('type') === 'seller' || searchParams.get('role') === 'host' ? 'host' : 'user';
+  const [role, setRole] = useState(initialRole); // 'user' or 'host'
+  const [showPass, setShowPass] = useState(false);
   const [form, setForm] = useState({
     firstName: '',
     lastName: '',
@@ -372,7 +375,17 @@ export default function RegisterPage() {
 
           <div className="row g-2 mb-3">
             <div className="col-6">
-              <label style={{ fontSize: 12, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 4 }}>Password</label>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                <label style={{ fontSize: 12, fontWeight: 600, color: '#475569' }}>Password</label>
+                <button
+                  type="button"
+                  onClick={() => setShowPass((v) => !v)}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', padding: 0, display: 'flex', alignItems: 'center', gap: 3, fontSize: 11 }}
+                  title={showPass ? 'Hide password' : 'Show password'}
+                >
+                  {showPass ? <FiEyeOff size={13} /> : <FiEye size={13} />}
+                </button>
+              </div>
               <div style={{ position: 'relative' }}>
                 <FiLock size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
                 <input
@@ -387,16 +400,21 @@ export default function RegisterPage() {
               </div>
             </div>
             <div className="col-6">
-              <label style={{ fontSize: 12, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 4 }}>Confirm Pass</label>
-              <input
-                type={showPass ? 'text' : 'password'}
-                className="form-control py-2"
-                placeholder="••••••••"
-                value={form.confirmPassword}
-                onChange={(e) => setField('confirmPassword', e.target.value)}
-                style={{ fontSize: 13 }}
-                required
-              />
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                <label style={{ fontSize: 12, fontWeight: 600, color: '#475569' }}>Confirm Pass</label>
+              </div>
+              <div style={{ position: 'relative' }}>
+                <FiLock size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+                <input
+                  type={showPass ? 'text' : 'password'}
+                  className="form-control ps-4 py-2"
+                  placeholder="••••••••"
+                  value={form.confirmPassword}
+                  onChange={(e) => setField('confirmPassword', e.target.value)}
+                  style={{ fontSize: 13 }}
+                  required
+                />
+              </div>
             </div>
           </div>
 
